@@ -62,6 +62,11 @@ fi
 # Create output directory if it does not exist.
 [-d $OUTPUT_DIR ] || mkdir -p $OUTPUT_DIR
 
+# Create output file to store all tropical cyclones appearance.
+TC_FILE="${OUTPUT_DIR}/tc.csv"
+echo "Year,Month,Day,Hour,Latitude,Longitude" > $TC_FILE
+
+# Loop through all bdeck files to get tropical cyclones genesis date.
 for bdeck_file in $BDECK_FILES; do
     first_line=$(head -n 1 $bdeck_file)
 
@@ -76,8 +81,6 @@ for bdeck_file in $BDECK_FILES; do
     tc_long=$(echo $first_line | awk -F, '{print $8}')
     tc_long="$(convert_to_grads_long $tc_long)"
 
-    # echo $tc_genesis_time
-    echo $tc_lat
-    echo $tc_long
+    echo "${tc_year},${tc_month},${tc_day},${tc_hour},${tc_lat},${tc_long}" >> $TC_FILE
 done
 
