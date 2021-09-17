@@ -212,3 +212,6 @@ done
 
 # After finish everything, return back to the original directory to do further stuffs.
 popd
+
+# Copy the configuration file to the output directory so we know how the data was extracted.
+cp $1 "${OUTPUT_DIR}/conf"
