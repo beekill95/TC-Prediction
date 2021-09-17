@@ -82,7 +82,7 @@ fi
 
 # Create output file to store all tropical cyclones appearance.
 TC_FILE="${OUTPUT_DIR}/tc.csv"
-echo "Observation,Genesis,Latitude,Longitude" > "${TC_FILE}"
+echo "Observation,Genesis,End,Latitude,Longitude" > "${TC_FILE}"
 
 # Store time frame that we shouldn't extract environmental variables from.
 # Because either we're having TCs in those time, or we want to extract environmental variables before the lead time.
@@ -113,7 +113,7 @@ for bdeck_file in $BDECK_FILES; do
     tc_long=$(echo $first_line | awk -F, '{print $8}')
     tc_long="$(convert_to_grads_long $tc_long)"
 
-    echo "${tc_observation_time},${tc_genesis_time},${tc_lat},${tc_long}" >> $TC_FILE
+    echo "${tc_observation_time},${tc_genesis_time},${tc_end_time},${tc_lat},${tc_long}" >> $TC_FILE
 done
 
 # Create a Grads script to extract data from GRIB2 and convert it to intermediate netCDF files.
