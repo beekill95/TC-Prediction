@@ -29,7 +29,7 @@ function convert_to_grads_long() {
 function cleanup_tmp_dir() {
     if [ -d "${TMP_DIR}" ]; then
         rm -rf "$TMP_DIR"
-        echo "Temporary directory removed!"
+        echo "Temporary directory ${TMP_DIR} removed!"
     fi
 }
 
@@ -40,10 +40,10 @@ trap cleanup_tmp_dir EXIT
 # long functions to parse command line arguments.
 CONFIG_FILE=$1
 if [ -z "${CONFIG_FILE}" ]; then
-    echo "Please input the path of configuration file as first argument"
+    >&2 echo "Please input the path of configuration file as first argument"
     exit 1
 elif ! [ -f "${CONFIG_FILE}" ]; then
-    echo "$CONFIG_FILE doesn't exist. Please make sure that configuration file path is correct."
+    >&2 echo "$CONFIG_FILE doesn't exist. Please make sure that configuration file path is correct."
     exit 1
 else
     echo "Loading configuration file ..."
@@ -53,15 +53,23 @@ fi
 
 # Check that BDECK_FILES variable is set.
 if [ -z "${BDECK_FILES}" ]; then
-    echo "Missing variable BDECK_FILES in configuration file."
+    >&2 echo "Missing variable BDECK_FILES in configuration file."
     exit 1
 fi
 
 # Check that REANALYSIS_DIR variable is set.
 if [ -z "${REANALYSIS_FILES}" ]; then
-    echo "Missing variable REANALYSIS_FILES in configuration file."
+    >&2 echo "Missing variable REANALYSIS_FILES in configuration file."
     exit 1
 fi
+
+# Check that our dependencies are satisfied.
+for prog in "grads" "cdo" "wgrib2"; do
+    if ! [ -x "$(command -v $prog)" ]; then
+        >&2 echo "ERROR: Missing program $prog!!"
+        exit 1
+    fi
+done
 
 # Check that OUTPUT_DIR variable is set,
 # if not, fallback to the default one.
@@ -70,7 +78,7 @@ if [ -z "${OUTPUT_DIR}" ]; then
     OUTPUT_DIR="./output"
 fi
 # Create output directory if it does not exist.
-[ -d "${OUTPUT_DIR}" ] || mkdir -p $OUTPUT_DIR
+[ -d "${OUTPUT_DIR}" ] || mkdir -p "$OUTPUT_DIR"
 
 # Create output file to store all tropical cyclones appearance.
 TC_FILE="${OUTPUT_DIR}/tc.csv"
@@ -108,17 +116,16 @@ for bdeck_file in $BDECK_FILES; do
     echo "${tc_observation_time},${tc_genesis_time},${tc_lat},${tc_long}" >> $TC_FILE
 done
 
-# Create a template Grads script to extract data from GRIB2 and convert it to intermediate netCDF files.
+# Create a Grads script to extract data from GRIB2 and convert it to intermediate netCDF files.
 # The function uses global variables: LATITUDE, LONGITUDE, LEVELS, and VARIABLES
 # $1: output file
-function generate_grads_template_script() {
-    GRIB_CTL_FILE="__GRIB_CTL_FILE__"
-    GRIB_CTL_FILE_PREFIX="__GRIB_CTL_FILE_PREFIX__"
-
+# $2: GRIB2 .ctl file to read from.
+# $3: unique prefix to separate the output netCDF files of this script.
+function generate_grads_extract_script() {
     # Generate statements to put in the template grads script.
     local statements=(
         "'reinit'"
-        "'open ${GRIB_CTL_FILE}'"
+        "'open ${2}'"
         "'set lat ${LATITUDE[0]} ${LATITUDE[1]}'"
         "'set lon ${LONGITUDE[0]} ${LONGITUDE[1]}'"
         "'set lev ${LEVELS[0]}'"
@@ -129,7 +136,7 @@ function generate_grads_template_script() {
     for variable in "${VARIABLES[@]}"; do
         statements+=(
             "'define ${variable}=${variable}'"
-            "'set sdfwrite -flt ${GRIB_CTL_FILE_PREFIX}.${variable}.nc'"
+            "'set sdfwrite -flt ${3}.${variable}.nc'"
             "'sdfwrite ${variable}'"
         )
     done
@@ -137,7 +144,7 @@ function generate_grads_template_script() {
     # Output all statement to template grads script.
     echo > $1
     for statement in "${statements[@]}"; do
-        echo $statement >> $1
+        echo $statement >> "$1"
     done
 }
 
@@ -152,9 +159,8 @@ echo "Temporary directory ${TMP_DIR} created!"
 # Function will generate netCDF from Grib2 observation data file.
 # It will use the template grads script to generate intermediate netCDF files,
 # then merge those files using `cdo` and then remove intermediate files.
-# $1: path to the template grads script.
-# $2: grib2 file to extract data from and convert to netCDF file.
-# $3: path to directory contains the final netCDF file,
+# $1: grib2 file to extract data from and convert to netCDF file.
+# $2: path to directory contains the final netCDF file,
 #   the filename will follow the original grib2, but substitute .gs with .nc
 function generate_netcdf() {
     # Generate a unique prefix so we can easily clean up intermediate files.
@@ -162,16 +168,15 @@ function generate_netcdf() {
 
     # Check if .ctl already exists for the current .grib2 file,
     # if it doesn't create it.
-    local ctl_file="${2}.ctl"
-    [ -f "${ctl_file}" ] || ./3rd_party/g2ctl -0 "${2}" > "${ctl_file}"
+    local ctl_file="${1}.ctl"
+    [ -f "${ctl_file}" ] || ./3rd_party/g2ctl -0 "${1}" > "${ctl_file}"
 
     # Then, execute the grads script to generate intermediate netCDF files.
-    sed "s|${GRIB_CTL_FILE}|${ctl_file}|g" "${1}" > $unique_prefix.gs
-    sed -i "s|${GRIB_CTL_FILE_PREFIX}|${unique_prefix}|g" $unique_prefix.gs
-    grads -xlbc $unique_prefix.gs > /dev/null
+    generate_grads_extract_script "${unique_prefix}.gs" "$1.ctl" $unique_prefix
+    grads -xlbc "${unique_prefix}.gs" > /dev/null
 
     # Merge all those netCDF files to one file.
-    cdo -O -s merge $unique_prefix.*.nc "${3}/$(basename -- "$2").nc" > /dev/null
+    cdo -O -s merge $unique_prefix.*.nc "${2}/$(basename -- "$1").nc" > /dev/null
 
     # Remove all intermediate netCDF files and grads script.
     rm $unique_prefix.*.nc $unique_prefix.gs
@@ -181,10 +186,6 @@ function generate_netcdf() {
 # because we're going to change to temporary directory.
 ABS_REANALYSIS_FILES=( $(readlink -f "${REANALYSIS_FILES[@]}") )
 OUTPUT_DIR=$(readlink -f $OUTPUT_DIR)
-
-# Generate template Grads script.
-GRADS_EXTRACT_DATA_TEMPLATE="${TMP_DIR}/data_extract.template.gs"
-generate_grads_template_script "${GRADS_EXTRACT_DATA_TEMPLATE}"
 
 # Change to temporary directory and do all our works there,
 # to avoid littering current directory.
@@ -206,7 +207,7 @@ for data_file in "${ABS_REANALYSIS_FILES[@]}"; do
     done
 
     # Only extract observation data when the date is valid.
-    [ $skip -ne 0 ] || generate_netcdf "${GRADS_EXTRACT_DATA_TEMPLATE}" "${data_file}" "${OUTPUT_DIR}"
+    [ $skip -ne 0 ] || generate_netcdf "${data_file}" "${OUTPUT_DIR}"
 done
 
 # After finish everything, return back to the original directory to do further stuffs.
