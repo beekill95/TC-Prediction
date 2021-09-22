@@ -204,24 +204,21 @@ for data_file in "${ABS_REANALYSIS_FILES[@]}"; do
     # Get the date of the observation.
     observation_date=$(wgrib2 $data_file | head -n 1 | awk -F: '{print $3}' | cut -b 3-)
 
-    echo "Processing ${data_file}!"
-
     # If the observation is in the periods that a tropical cyclone is happening,
     # we will skip this observation.
     skip=0
     for i in "${!TC_LEAD_TIME[@]}"; do
         if [[ "$observation_date" > "${TC_LEAD_TIME[i]}" && "$observation_date" < "${TC_END_TIME[i]}" || "$observation_date" == "${TC_END_TIME[i]}" ]]; then
-            echo "Skipped $observation_date"
             skip=1
             break
         fi
     done
-
+    
+    # Special case when there are multiple cyclones within the same observation day.
+    [[ "${TC_LEAD_TIME[*]}" == *"$observation_date"* ]] && skip=0
 
     # Only extract observation data when the date is valid.
     if [ $skip -eq 0 ]; then
-        echo "Generating netCDF from ${data_file}!"
-
         generate_netcdf "${data_file}" "${OUTPUT_DIR}"
 
         # To store observation files where we don't found any tropical cyclones.
@@ -229,8 +226,6 @@ for data_file in "${ABS_REANALYSIS_FILES[@]}"; do
             NO_TC_OBSERVATIONS+=($observation_date)
         fi
     fi
-
-    echo "Done processing ${data_file}!"
 done
 
 # After finish everything, return back to the original directory to do further stuffs.
@@ -241,16 +236,17 @@ cp $1 "${OUTPUT_DIR}/conf"
 chmod u-wx "${OUTPUT_DIR}/conf"
 
 # Create output file to store label of all observation files.
-TC_FILE="${OUTPUT_DIR}/tc.csv"
-echo "Observation,TC,Genesis,End,Latitude,Longitude" > "${TC_FILE}"
+TEMP_TC_FILE="${OUTPUT_DIR}/tc.csv.temp"
+echo "Observation,TC,Genesis,End,Latitude,Longitude" > "${TEMP_TC_FILE}"
 
 for idate in "${NO_TC_OBSERVATIONS[@]}"; do
-    echo "$idate,0,,,,," >> "${TC_FILE}"
+    echo "$idate,0,,,,," >> "${TEMP_TC_FILE}"
 done
 
 for i in "${!TC_LEAD_TIME[@]}"; do
-    echo "${TC_LEAD_TIME[i]},1,${TC_GENESIS_TIME[i]},${TC_END_TIME[i]},${TC_LAT[i]},${TC_LONG[i]}" >> "${TC_FILE}"
+    echo "${TC_LEAD_TIME[i]},1,${TC_GENESIS_TIME[i]},${TC_END_TIME[i]},${TC_LAT[i]},${TC_LONG[i]}" >> "${TEMP_TC_FILE}"
 done
 
 # Then, sort the final output file.
-{ head -n 1 "${TC_FILE}" & tail -n +2 "${TC_FILE}" | sort -t , -k1,1; } > "${TC_FILE}"
+{ head -n 1 "${TEMP_TC_FILE}" & tail -n +2 "${TEMP_TC_FILE}" | sort -t , -k1,1; } > "${OUTPUT_DIR}/tc.csv"
+rm "${TEMP_TC_FILE}"
