@@ -44,7 +44,6 @@ read -s passwd
 echo ""
 
 num_chars=$(echo "$passwd" | awk '{print length($0)}')
-echo $num_chars
 if [[ $num_chars == 0 ]]; then
     echo "You need to set your password before you can continue"
     echo "  see the documentation in the script"
@@ -79,7 +78,7 @@ BASE_URL="https://rda.ucar.edu"
 # your download privileges to be suspended.
 AUTH_FILE="auth_status.rda.ucar.edu"
 COOKIES="auth.rda.ucar.edu.cookies"
-wget $cert_opt -O $AUTH_FILE --save-cookies $COOKIES --post-data="email=$username&passwd=$passwd&action=login" "$BASE_URL/cgi-bin/login"
+wget $cert_opt -O $AUTH_FILE --save-cookies $COOKIES --post-data="email=$username&passwd=$passwd&action=login" "$BASE_URL/cgi-bin/login" -nv
 
 #
 # download the file(s)
@@ -108,7 +107,8 @@ while [[ "$OBSERVATION_DATE" < "$END_DATE" || "$OBSERVATION_DATE" == "$END_DATE"
     if [[ ("$month" > "${MONTHS_TO_KEEP[0]}" || "$month" == "${MONTHS_TO_KEEP[0]}")
         && ("$month" < "${MONTHS_TO_KEEP[1]}" || "$month" == "${MONTHS_TO_KEEP[1]}") ]]; then
         url="$DATA_ROOT/$year/$year.$month/fnl_$(date --date="$OBSERVATION_DATE" +"%Y%m%d_%H_00").grib2"
-        wget $cert_opt $opts --load-cookies "$COOKIES" "$url" -P "$YEAR_OUTPUT_DIR"
+        echo "Downloading observation $OBSERVATION_DATE from $url"
+        wget $cert_opt $opts --load-cookies "$COOKIES" -P "$YEAR_OUTPUT_DIR" --progress=bar:force "$url" 2>&1 | tail -f -n +8
     else
         echo "SKIP downloading observation in $OBSERVATION_DATE"
     fi
