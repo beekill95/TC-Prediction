@@ -97,21 +97,12 @@ while [[ "$OBSERVATION_DATE" < "$END_DATE" || "$OBSERVATION_DATE" == "$END_DATE"
     year=$(date --date="$OBSERVATION_DATE" +"%Y")
     month=$(date --date="$OBSERVATION_DATE" +"%m")
 
-    echo $month
-
     # Create a separate directory for each year.
     if [[ "$CURRENT_YEAR" != "$year" ]]; then
         CURRENT_YEAR="$year"
         YEAR_OUTPUT_DIR="$1/$CURRENT_YEAR"
         [ -d "$YEAR_OUTPUT_DIR" ] || mkdir -p "$YEAR_OUTPUT_DIR"
     fi
-
-    echo "${MONTHS_TO_KEEP[0]}"
-    echo "${MONTHS_TO_KEEP[1]}"
-    [[ "$month" > "${MONTHS_TO_KEEP[0]}" ]] && echo "1"
-    [[ "$month" == "${MONTHS_TO_KEEP[0]}" ]] && echo "2"
-    [[ "$month" < "${MONTHS_TO_KEEP[1]}" ]] && echo "3"
-    [[ "$month" == "${MONTHS_TO_KEEP[1]}" ]] && echo "4"
 
     # Only download observations within the months we want.
     if [[ ("$month" > "${MONTHS_TO_KEEP[0]}" || "$month" == "${MONTHS_TO_KEEP[0]}")
