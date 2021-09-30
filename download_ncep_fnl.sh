@@ -1,20 +1,39 @@
 #! /bin/bash
+
+# **NOTE**: requires bash version >= 4.2
 #
 # bash script to download selected files from rda.ucar.edu using Wget
 # after you save the file, don't forget to make it executable
 #   i.e. - "chmod 755 <name_of_script>"
 #
+# Command line arguments:
+# ./download_ncep_fnl.sh "<output_directory>" "<begin_date>" ["<end_date>"]
+# where <begin_date> and <end_date> follow the format: "yyyymmdd hh"
+#
+# <end_date> is optional, if <end_date> is not specified, it is assumed
+# to get till the current date.
 # Experienced Wget Users: add additional command-line flags here
 #   Use the -r (--recursive) option with care
 #   Do NOT use the -b (--background) option - simultaneous file downloads
 #       can cause your data access to be blocked
 opts="-N"
-#
-# Replace xxxxxx with your rda.ucar.edu password on the next uncommented line
-# IMPORTANT NOTE:  If your password uses a special character that has special
-#                  meaning to csh, you should escape it with a backslash
-#                  Example:  set passwd = "my\!password"
 
+#
+# Check input date range
+#
+DATE_FORMAT="%Y%m%d %H"
+START_DATE=$(date --date="$2" +"$DATE_FORMAT")
+[ -z "$3" ] && END_DATE=$(date +"$DATE_FORMAT") || END_DATE=$(date --date="$3" +"$DATE_FORMAT")
+printf "Download data from %s to %s\n" "$START_DATE" "$END_DATE"
+
+#
+# For the purpose of this script,
+# we will only download observation data from May to November each year.
+MONTHS_TO_KEEP=("05" "11")
+
+#
+# Get username and password
+#
 unset username
 unset passwd
 
@@ -51,22 +70,61 @@ cert_opt=""
 #set cert_opt = "--no-check-certificate"
 #
 
+# Base root of the server
+BASE_URL="https://rda.ucar.edu"
+
 #
 # authenticate - NOTE: You should only execute this command ONE TIME.
 # Executing this command for every data file you download may cause
 # your download privileges to be suspended.
 AUTH_FILE="auth_status.rda.ucar.edu"
 COOKIES="auth.rda.ucar.edu.cookies"
-wget $cert_opt -O $AUTH_FILE --save-cookies $COOKIES --post-data="email=$username&passwd=$passwd&action=login" https://rda.ucar.edu/cgi-bin/login
+wget $cert_opt -O $AUTH_FILE --save-cookies $COOKIES --post-data="email=$username&passwd=$passwd&action=login" "$BASE_URL/cgi-bin/login"
 
 #
 # download the file(s)
 # NOTE:  if you get 403 Forbidden errors when downloading the data files, check
 #        the contents of the file 'auth_status.rda.ucar.edu'
-wget $cert_opt $opts --load-cookies auth.rda.ucar.edu.cookies https://rda.ucar.edu/data/OS/ds083.2/grib2/2007/2007.12/fnl_20071206_12_00.grib2
-wget $cert_opt $opts --load-cookies auth.rda.ucar.edu.cookies https://rda.ucar.edu/data/OS/ds083.2/grib2/2007/2007.12/fnl_20071206_18_00.grib2
-wget $cert_opt $opts --load-cookies auth.rda.ucar.edu.cookies https://rda.ucar.edu/data/OS/ds083.2/grib2/2007/2007.12/fnl_20071207_00_00.grib2
-wget $cert_opt $opts --load-cookies auth.rda.ucar.edu.cookies https://rda.ucar.edu/data/OS/ds083.2/grib2/2007/2007.12/fnl_20071207_06_00.grib2
+
+# Download observation every 6h hour increment.
+HOUR_INCREMENT=6
+
+# Download observation data. 
+OBSERVATION_DATE="$START_DATE"
+CURRENT_YEAR=""
+DATA_ROOT="$BASE_URL/data/OS/ds083.2/grib2"
+while [[ "$OBSERVATION_DATE" < "$END_DATE" || "$OBSERVATION_DATE" == "$END_DATE"  ]]; do
+    year=$(date --date="$OBSERVATION_DATE" +"%Y")
+    month=$(date --date="$OBSERVATION_DATE" +"%m")
+
+    echo $month
+
+    # Create a separate directory for each year.
+    if [[ "$CURRENT_YEAR" != "$year" ]]; then
+        CURRENT_YEAR="$year"
+        YEAR_OUTPUT_DIR="$1/$CURRENT_YEAR"
+        [ -d "$YEAR_OUTPUT_DIR" ] || mkdir -p "$YEAR_OUTPUT_DIR"
+    fi
+
+    echo "${MONTHS_TO_KEEP[0]}"
+    echo "${MONTHS_TO_KEEP[1]}"
+    [[ "$month" > "${MONTHS_TO_KEEP[0]}" ]] && echo "1"
+    [[ "$month" == "${MONTHS_TO_KEEP[0]}" ]] && echo "2"
+    [[ "$month" < "${MONTHS_TO_KEEP[1]}" ]] && echo "3"
+    [[ "$month" == "${MONTHS_TO_KEEP[1]}" ]] && echo "4"
+
+    # Only download observations within the months we want.
+    if [[ ("$month" > "${MONTHS_TO_KEEP[0]}" || "$month" == "${MONTHS_TO_KEEP[0]}")
+        && ("$month" < "${MONTHS_TO_KEEP[1]}" || "$month" == "${MONTHS_TO_KEEP[1]}") ]]; then
+        url="$DATA_ROOT/$year/$year.$month/fnl_$(date --date="$OBSERVATION_DATE" +"%Y%m%d_%H_00").grib2"
+        wget $cert_opt $opts --load-cookies "$COOKIES" "$url" -P "$YEAR_OUTPUT_DIR"
+    else
+        echo "SKIP downloading observation in $OBSERVATION_DATE"
+    fi
+
+    # Increment to the next observation.
+    OBSERVATION_DATE=$(date --date="$OBSERVATION_DATE +$HOUR_INCREMENT hour" +"$DATE_FORMAT")
+done
 
 #
 # clean up
