@@ -72,6 +72,7 @@ function generate_grads_extract_script() {
 # $1: grib2 file to extract data from and convert to netCDF file.
 # $2: path to directory contains the final netCDF file,
 #   the filename will follow the original grib2, but substitute .gs with .nc
+G2CTL_PATH=$(readlink -f "./3rd_party/g2ctl")
 function generate_netcdf() {
     # Generate a unique prefix so we can easily clean up intermediate files.
     local unique_prefix=$(cat /proc/sys/kernel/random/uuid | sed 's/[-]//g' | head -c 20)
@@ -79,7 +80,9 @@ function generate_netcdf() {
     # Check if .ctl already exists for the current .grib2 file,
     # if it doesn't create it.
     local ctl_file="${1}.ctl"
-    [ -f "${ctl_file}" ] || ./3rd_party/g2ctl -0 "${1}" > "${ctl_file}"
+    local idx_file="${1}.idx"
+    [ -f "${ctl_file}" ] || $G2CTL_PATH -0 "${1}" > "${ctl_file}"
+    [ -f "${idx_file}" ] || gribmap -i "${ctl_file}"
 
     # Then, execute the grads script to generate intermediate netCDF files.
     generate_grads_extract_script "${unique_prefix}.gs" "$1.ctl" $unique_prefix
