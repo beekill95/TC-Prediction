@@ -139,7 +139,7 @@ if [ -z "${OUTPUT_DIR}" ]; then
     OUTPUT_DIR="./output"
 fi
 # Create a directory in the output directory for pressure level.
-OUTPUT_DIR="$OUTPUT_DIR/${LEVELS[0]}mb"
+OUTPUT_DIR="$OUTPUT_DIR/${LEAD_TIME}h_${LEVELS[0]}mb"
 # Create output directory if it does not exist.
 [ -d "${OUTPUT_DIR}" ] || mkdir -p "$OUTPUT_DIR"
 
