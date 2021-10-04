@@ -74,6 +74,7 @@ function generate_grads_extract_script() {
 #   the filename will follow the original grib2, but substitute .gs with .nc
 G2CTL_PATH=$(readlink -f "./3rd_party/g2ctl")
 function generate_netcdf() {
+    echo "### GENERATING netCDF for $1"
     # Generate a unique prefix so we can easily clean up intermediate files.
     local unique_prefix=$(cat /proc/sys/kernel/random/uuid | sed 's/[-]//g' | head -c 20)
 
@@ -86,13 +87,14 @@ function generate_netcdf() {
 
     # Then, execute the grads script to generate intermediate netCDF files.
     generate_grads_extract_script "${unique_prefix}.gs" "$1.ctl" $unique_prefix
-    grads -xlbc "${unique_prefix}.gs" > /dev/null
+    grads -xlbc "${unique_prefix}.gs"
 
     # Merge all those netCDF files to one file.
-    cdo -O -s merge $unique_prefix.*.nc "${2}/$(basename -- "$1" .grib2).nc" > /dev/null
+    cdo -O -s merge $unique_prefix.*.nc "${2}/$(basename -- "$1" .grib2).nc"
 
     # Remove all intermediate netCDF files and grads script.
     rm $unique_prefix.*.nc $unique_prefix.gs
+    echo "### DONE generating netCDF for $1"
 }
 
 # #### SCRIPT START ####
@@ -243,7 +245,7 @@ TEMP_TC_FILE="${OUTPUT_DIR}/tc.csv.temp"
 echo "Observation,TC,Genesis,End,Latitude,Longitude" > "${TEMP_TC_FILE}"
 
 for idate in "${NO_TC_OBSERVATIONS[@]}"; do
-    echo "$idate,0,,,,," >> "${TEMP_TC_FILE}"
+    echo "$idate,0,,,," >> "${TEMP_TC_FILE}"
 done
 
 for i in "${!TC_LEAD_TIME[@]}"; do
