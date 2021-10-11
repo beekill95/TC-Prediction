@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.12.0
+#       jupytext_version: 1.13.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -20,8 +20,7 @@ import data
 # Build simple model as our baseline.
 
 model = tf.keras.Sequential([
-    layers.Input((41, 181, 5)),
-    layers.Conv2D(32, (3, 3), activation='relu'),
+    layers.Conv2D(32, (3, 3), activation='relu', input_shape=(41, 181, 5)),
     layers.Conv2D(64, (3, 3), activation='relu'),
     layers.MaxPooling2D((2, 2)),
     layers.Conv2D(64, (3, 3), activation='relu'),
@@ -51,7 +50,11 @@ dataset = data.load_data(
 
 # Finally, train the model on the data.
 
-epochs = 10
-#model.fit(dataset.repeat(epochs), epochs=epochs)
+# +
+import numpy as np
 
-tf.config.list_physical_devices('GPU')
+epochs = 10
+model.fit(dataset, epochs=epochs)
+# -
+
+

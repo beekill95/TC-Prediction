@@ -56,15 +56,16 @@ def load_data(data_dir, batch_size=32, shuffle=False):
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
         _load_observation_data,
         inp=[path, tc],
-        Tout=[tf.float32, tf.int64]),
-        num_parallel_calls=tf.data.AUTOTUNE,
-        deterministic=False)
-    # dataset = dataset.map(lambda path, tc: tf.py_function(
-    #     _set_shape,
-    #     inp=[path, tc],
-    #     Tout=[tf.float32, tf.int64]),
-    #     num_parallel_calls=tf.data.AUTOTUNE,
-    #     deterministic=False)
+        Tout=[tf.float32, tf.float32],
+        name='load_observation_data'),
+        num_parallel_calls=2,
+        deterministic=False,
+    )
+
+    # Tensorflow should figure out the shape of the output of previous map,
+    # but it doesn't, so we have to do it our self.
+    # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+    dataset = dataset.map(lambda observation, tc: _set_shape(observation, tc))
 
     return dataset.batch(batch_size)
 
@@ -77,8 +78,12 @@ def _load_observation_data(observation_path, label):
     # Reshape data so that it have channel_last format.
     data = np.moveaxis(data, 0, -1)
 
-    return data, [label]
+    return data, np.asarray([label], dtype=np.float32)
 
+def _set_shape(observation, label):
+    # TODO: we shouldn't fixed shape here!!!!
+    observation.set_shape([41, 181, 5])
+    return observation, label
 
 if __name__ == '__main__':
     a = load_data(
