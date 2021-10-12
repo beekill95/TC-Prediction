@@ -12,7 +12,8 @@ dependencies:
   - pandas
   - pip
   - pip:
+    - -r requirements.txt
     - -r requirements-dev.txt
-  - tensorflow
+  - tensorflow-gpu=2.4.1
   - xarray
 
