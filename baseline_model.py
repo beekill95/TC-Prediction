@@ -15,6 +15,7 @@
 
 import tensorflow as tf
 import tensorflow.keras.layers as layers
+import tensorflow_addons as tfa
 import data
 
 # Build simple model as our baseline.
@@ -30,7 +31,7 @@ model = tf.keras.Sequential([
     layers.Flatten(),
     layers.Dense(2048, activation='relu'),
     layers.Dense(2048, activation='relu'),
-    layers.Dense(1),
+    layers.Dense(2),
 ])
 model.summary()
 
@@ -39,22 +40,25 @@ model.summary()
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    metrics=['binary_accuracy']
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=['sparse_categorical_accuracy']
 )
 
-# Load our training data.
+# Load our training and validation data.
 
-dataset = data.load_data(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb')
+training = data.load_data(
+    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train')
+validation = data.load_data(
+    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_val')
 
-# Finally, train the model on the data.
-
-# +
-import numpy as np
+# Train the model on the data.
 
 epochs = 10
-model.fit(dataset, epochs=epochs)
-# -
+model.fit(training, epochs=epochs, validation_data=validation)
 
+# After the model is trained, we will test it on test data.
 
+testing = data.load_data(
+    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_test')
+predictions = model.predict(testing)
+print(predictions)

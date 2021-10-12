@@ -56,7 +56,7 @@ def load_data(data_dir, batch_size=32, shuffle=False):
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
         _load_observation_data,
         inp=[path, tc],
-        Tout=[tf.float32, tf.float32],
+        Tout=[tf.float32, tf.int64],
         name='load_observation_data'),
         num_parallel_calls=2,
         deterministic=False,
@@ -78,12 +78,14 @@ def _load_observation_data(observation_path, label):
     # Reshape data so that it have channel_last format.
     data = np.moveaxis(data, 0, -1)
 
-    return data, np.asarray([label], dtype=np.float32)
+    return data, label
+
 
 def _set_shape(observation, label):
     # TODO: we shouldn't fixed shape here!!!!
     observation.set_shape([41, 181, 5])
     return observation, label
+
 
 if __name__ == '__main__':
     a = load_data(
