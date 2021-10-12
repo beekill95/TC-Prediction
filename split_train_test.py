@@ -51,8 +51,16 @@ if __name__ == '__main__':
     files = glob.glob(os.path.join(args.indir, '*.nc'))
     files.sort()
 
-    tc = pd.read_csv(os.path.join(args.indir, 'tc.csv'),
-                     dtype={'Observation': str})
+    tc = pd.read_csv(
+        os.path.join(args.indir, 'tc.csv'),
+        dtype={
+            'Observation': str,
+            'TC': str,
+            'Genesis': str,
+            'End': str,
+            'Latitude': str,
+            'Longitude': str,
+        })
 
     # Output directories.
     if args.val_start:
@@ -84,6 +92,7 @@ if __name__ == '__main__':
         # Filter out files that belongs to this directory.
         file = None
         file = next(ifile) if file is None else file
+        # the filename is expected to be fnl_YYYYMMDD_HH_mm.nc
         while end_date is None or os.path.basename(file).split('_')[1] < end_date:
             # Copy observation to output directory.
             shutil.copy(file, outdir)
@@ -98,6 +107,7 @@ if __name__ == '__main__':
         tc_in_type = pd.DataFrame(columns=tc.columns)
         tc_row = None
         _, tc_row = next(itc) if tc_row is None else (None, tc_row)
+        # The Observation cell should be YYYYMMDDHHmm
         while end_date is None or tc_row['Observation'][:8] < end_date:
             tc_in_type = tc_in_type.append(tc_row, ignore_index=True)
             try:
@@ -106,4 +116,4 @@ if __name__ == '__main__':
                 break
 
         # Then, create tc files.
-        tc_in_type.to_csv(os.path.join(outdir, 'tc.csv'))
+        tc_in_type.to_csv(os.path.join(outdir, 'tc.csv'), index=False)
