@@ -15,7 +15,7 @@
 
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-import tensorflow_addons as tfa
+import tf_metrics as tfm
 import data
 
 # Build simple model as our baseline.
@@ -31,7 +31,7 @@ model = tf.keras.Sequential([
     layers.Flatten(),
     layers.Dense(2048, activation='relu'),
     layers.Dense(2048, activation='relu'),
-    layers.Dense(2),
+    layers.Dense(1),
 ])
 model.summary()
 
@@ -40,8 +40,13 @@ model.summary()
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-    metrics=['sparse_categorical_accuracy']
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    metrics=[
+        'binary_accuracy',
+        tfm.RecallScore(from_logits=True),
+        tfm.PrecisionScore(from_logits=True),
+        tfm.F1Score(num_classes=1, from_logits=True),
+    ]
 )
 
 # Load our training and validation data.
@@ -62,3 +67,4 @@ testing = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_test')
 predictions = model.predict(testing)
 print(predictions)
+model.evaluate(testing)

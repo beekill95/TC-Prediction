@@ -78,7 +78,7 @@ def _load_observation_data(observation_path, label):
     # Reshape data so that it have channel_last format.
     data = np.moveaxis(data, 0, -1)
 
-    return data, label
+    return data, [label]
 
 
 def _set_shape(observation, label):
