@@ -84,6 +84,7 @@ def _load_observation_data(observation_path, label):
 def _set_shape(observation, label):
     # TODO: we shouldn't fixed shape here!!!!
     observation.set_shape([41, 181, 5])
+    label.set_shape([1])
     return observation, label
 
 

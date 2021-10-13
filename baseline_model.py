@@ -59,7 +59,7 @@ validation = data.load_data(
 # Train the model on the data.
 
 epochs = 10
-model.fit(training, epochs=epochs, validation_data=validation)
+model.fit(training, epochs=epochs, validation_data=validation, class_weight={1: 5., 0: 1.})
 
 # After the model is trained, we will test it on test data.
 
