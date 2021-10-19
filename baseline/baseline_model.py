@@ -52,14 +52,16 @@ model.compile(
 # Load our training and validation data.
 
 training = data.load_data(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train')
+    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
+    negative_samples_ratio=3)
 validation = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_val')
 
 # Train the model on the data.
 
-epochs = 10
-model.fit(training, epochs=epochs, validation_data=validation, class_weight={1: 5., 0: 1.})
+epochs = 50
+model.fit(training, epochs=epochs, validation_data=validation,
+          class_weight={1: 3., 0: 1.})
 
 # After the model is trained, we will test it on test data.
 
