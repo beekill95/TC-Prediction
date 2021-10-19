@@ -12,13 +12,16 @@ def _extract_date_from_observation_path(path):
     return ''.join(filename.split('_')[1:-1])
 
 
-def load_data(data_dir, batch_size=32, shuffle=False):
+def load_data(data_dir, batch_size=32, shuffle=False, negative_samples_ratio=None):
     """
     Load data from the given directory.
 
     :param data_dir: path to directory contains observation data *.nc and label file tc.csv
     :param batch_size: how many observation data should be in a batch.
     :param shuffle: should shuffle data after we have exhausted data points.
+    :param negative_samples_ratio: (default: None) the ratio of negative samples to positive samples.
+    For instance, if the ratio is 3, then for 1 positive sample, there will be three negative samples.
+    If None is passed, all the negative samples are taken.
     :returns:
     """
     # Get a list of all observation data files.
@@ -46,6 +49,7 @@ def load_data(data_dir, batch_size=32, shuffle=False):
         how='inner',
         left_on='Date',
         right_on='Observation')
+    dataset = _filter_negative_samples(dataset, negative_samples_ratio)
 
     dataset = tf.data.Dataset.from_tensor_slices(
         (dataset['Path'], dataset['TC']))
@@ -71,7 +75,6 @@ def load_data(data_dir, batch_size=32, shuffle=False):
 
 
 def _load_observation_data(observation_path, label):
-    # print('_load_observation_data')
     data = xr.open_dataset(observation_path.decode('utf-8'), engine='netcdf4')
     data = data.to_array().values
 
@@ -88,12 +91,28 @@ def _set_shape(observation, label):
     return observation, label
 
 
+def _filter_negative_samples(dataset, negative_samples_ratio):
+    if negative_samples_ratio is None:
+        return dataset
+
+    positive_samples = dataset[dataset['TC'] == 1]
+    negative_samples = dataset[dataset['TC'] == 0]
+
+    nb_negative_samples_to_take = int(
+        len(positive_samples) * negative_samples_ratio)
+    negative_samples = negative_samples.sample(nb_negative_samples_to_take)
+
+    result = pd.concat([positive_samples, negative_samples])
+    return result.sort_values(by='Observation').reset_index()
+
+
 if __name__ == '__main__':
     a = load_data(
         '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb',
-        batch_size=1)
+        batch_size=1,
+        negative_samples_ratio=3)
     a = iter(a)
     for i in range(1000):
-        print(i)
+        # print(i)
         b = next(a)
     print(b)
