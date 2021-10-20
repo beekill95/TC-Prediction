@@ -14,24 +14,22 @@
 # ---
 
 # +
-import sys  # noqa
-sys.path.append('..')  # noqa
+import sys # noqa
+sys.path.append('..') # noqa
 
-import data
-import tf_metrics as tfm
-import tensorflow.keras as keras
 import tensorflow as tf
-import tensorflow_addons as tfa
+import tensorflow.keras as keras
+import tf_metrics as tfm
+import data
 # -
 
-# Use ResNet
+# Use Densenet
 
-model = keras.applications.ResNet50(
+model = keras.applications.DenseNet121(
     input_shape=(41, 181, 5),
     weights=None,
     include_top=True,
     classes=1,
-    classifier_activation=None,
 )
 
 # Build the model using BinaryCrossentropy loss
@@ -47,24 +45,24 @@ model.compile(
         tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
     ]
 )
+model.summary()
 
 # Load our training and validation data.
 
 downsampled_training = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
     batch_size=64,
-    shuffle=True,
     negative_samples_ratio=3)
 validation = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_val')
 
 # # First stage
 #
-# train the model on the down-sampled data.
+# Train the model on the down-sampled data.
 
 epochs = 50
 model.fit(
-    downsampled_training,
+    downsampled_training.shuffle(128),
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 3., 0: 1.},
@@ -79,21 +77,22 @@ model.fit(
     ]
 )
 
+# Then, we will test on the test dataset to see the baseline results.
+
 testing = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_test')
 model.evaluate(testing)
 
 # # Second stage
 #
-# train the model on full dataset.
+# Train the model on full dataset.
 
 full_training = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
     batch_size=64,
-    shuffle=True,
 )
 model.fit(
-    full_training,
+    full_training.shuffle(128),
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 3., 0: 1.},
@@ -109,4 +108,6 @@ model.fit(
 
 # After the model is trained, we will test it on test data.
 
+predictions = model.predict(testing)
+print(predictions)
 model.evaluate(testing)
