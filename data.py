@@ -62,7 +62,7 @@ def load_data(data_dir, batch_size=32, shuffle=False, negative_samples_ratio=Non
         inp=[path, tc],
         Tout=[tf.float32, tf.int64],
         name='load_observation_data'),
-        num_parallel_calls=2,
+        num_parallel_calls=tf.data.AUTOTUNE,
         deterministic=False,
     )
 
