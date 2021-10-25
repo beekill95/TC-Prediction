@@ -12,11 +12,12 @@ def _extract_date_from_observation_path(path):
     return ''.join(filename.split('_')[1:-1])
 
 
-def load_data(data_dir, batch_size=32, shuffle=False, negative_samples_ratio=None):
+def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_samples_ratio=None):
     """
     Load data from the given directory.
 
     :param data_dir: path to directory contains observation data *.nc and label file tc.csv
+    :param data_shape: shape of the observation data in this directory.
     :param batch_size: how many observation data should be in a batch.
     :param shuffle: should shuffle data after we have exhausted data points.
     :param negative_samples_ratio: (default: None) the ratio of negative samples to positive samples.
@@ -69,7 +70,8 @@ def load_data(data_dir, batch_size=32, shuffle=False, negative_samples_ratio=Non
     # Tensorflow should figure out the shape of the output of previous map,
     # but it doesn't, so we have to do it our self.
     # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
-    dataset = dataset.map(lambda observation, tc: _set_shape(observation, tc))
+    dataset = dataset.map(lambda observation, tc: _set_shape(
+        observation, tc, data_shape))
 
     return dataset.batch(batch_size)
 
@@ -84,9 +86,9 @@ def _load_observation_data(observation_path, label):
     return data, [label]
 
 
-def _set_shape(observation, label):
-    # TODO: we shouldn't fixed shape here!!!!
-    observation.set_shape([41, 181, 5])
+def _set_shape(observation, label, data_shape):
+    observation.set_shape(data_shape)
+    # tf.print(observation.shape)
     label.set_shape([1])
     return observation, label
 
@@ -107,12 +109,13 @@ def _filter_negative_samples(dataset, negative_samples_ratio):
 
 
 if __name__ == '__main__':
+    tf.config.set_visible_devices([], 'GPU')
     a = load_data(
         '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb',
         batch_size=1,
         negative_samples_ratio=3)
     a = iter(a)
-    for i in range(1000):
+    for i in range(2):
         # print(i)
         b = next(a)
-    print(b)
+        print(b)
