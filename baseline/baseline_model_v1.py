@@ -13,15 +13,34 @@
 #     name: python3
 # ---
 
+# +
+import sys  # noqa
+sys.path.append('..')  # noqa
+
+import data
+import tf_metrics as tfm
+import tensorflow.keras as keras
 import tensorflow as tf
 import tensorflow.keras.layers as layers
-import tf_metrics as tfm
-import data
+from tensorflow.keras.layers.experimental import preprocessing
+import tensorflow_addons as tfa
+import plot
+# -
 
-# Build simple model as our baseline.
+# Use ResNet
+
+# The data that we're using will have the following shape.
+# Should change it to whatever the shape of the data we're going to use down there.
+
+# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels/6h_700mb'
+train_path = f'{data_path}_train'
+val_path = f'{data_path}_val'
+test_path = f'{data_path}_test'
+data_shape = (41, 181, 15)
 
 model = tf.keras.Sequential([
-    layers.Conv2D(32, (3, 3), input_shape=(41, 181, 5)),
+    layers.Conv2D(32, (3, 3), input_shape=(41, 181, 15)),
     layers.BatchNormalization(),
     layers.Activation('relu'),
     layers.Conv2D(64, (3, 3)),
@@ -43,39 +62,99 @@ model = tf.keras.Sequential([
 ])
 model.summary()
 
-# Then, build the model with cross validation loss,
-# and with adam optimizer.
+# Build the model using BinaryCrossentropy loss
 
 model.compile(
     optimizer='adam',
     loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    #loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
+        'mean_absolute_error',
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
-        tfm.F1Score(num_classes=1, from_logits=True),
+        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
     ]
 )
 
 # Load our training and validation data.
 
-training = data.load_data(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
+full_training = data.load_data(
+    train_path,
+    data_shape=data_shape,
     batch_size=64,
-    negative_samples_ratio=3)
-validation = data.load_data(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_val')
+    shuffle=True,
+)
+downsampled_training = data.load_data(
+    train_path,
+    data_shape=data_shape,
+    batch_size=64,
+    shuffle=True,
+    negative_samples_ratio=1)
+validation = data.load_data(val_path, data_shape=data_shape)
 
-# Train the model on the data.
+# +
+#normalization_layer = preprocessing.Normalization(axis=-1)
+# normalization_layer.adapt(full_training)
 
+#full_training = full_training.map(lambda x, y: normalization_layer(x), y)
+#downsampled_training = downsampled_training.map(lambda x, y: normalization_layer(x), y)
+#validation = validation.map(lambda x, y: normalization_layer(x), y)
+# -
+
+# # First stage
+#
+# train the model on the down-sampled data.
+
+# +
 epochs = 50
-model.fit(training, epochs=epochs, validation_data=validation,
-          class_weight={1: 3., 0: 1.})
+first_stage_history = model.fit(
+    downsampled_training,
+    epochs=epochs,
+    validation_data=validation,
+    class_weight={1: 1., 0: 1.},
+    shuffle=True,
+    callbacks=[
+        #keras.callbacks.EarlyStopping(
+        #    monitor='val_f1_score',
+        #    mode='max',
+        #    verbose=1,
+        #    patience=10,
+        #    restore_best_weights=True),
+    ]
+)
+
+plot.plot_training_history(first_stage_history, "First stage training")
+# -
+
+testing = data.load_data(test_path, data_shape=data_shape)
+#testing = testing.map(lambda x, y: normalization_layer(x), y)
+model.evaluate(testing)
+
+# # Second stage
+#
+# train the model on full dataset.
+
+# +
+second_stage_history = model.fit(
+    full_training,
+    epochs=epochs,
+    validation_data=validation,
+    class_weight={1: 5., 0: 1.},
+    shuffle=True,
+    callbacks=[
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=10,
+            restore_best_weights=True),
+    ])
+
+
+plot.plot_training_history(second_stage_history, "")
+# -
 
 # After the model is trained, we will test it on test data.
 
-testing = data.load_data(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_test')
-predictions = model.predict(testing)
-print(predictions)
 model.evaluate(testing)
