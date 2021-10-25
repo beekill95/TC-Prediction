@@ -46,17 +46,20 @@ function generate_grads_extract_script() {
         "'open ${2}'"
         "'set lat ${LATITUDE[0]} ${LATITUDE[1]}'"
         "'set lon ${LONGITUDE[0]} ${LONGITUDE[1]}'"
-        "'set lev ${LEVELS[0]}'"
         "'set t 1 last'"
     )
     
 
-    for variable in "${VARIABLES[@]}"; do
-        statements+=(
-            "'define ${variable}=${variable}'"
-            "'set sdfwrite -flt ${3}.${variable}.nc'"
-            "'sdfwrite ${variable}'"
-        )
+    for variable in "${!VARIABLES_PRESSURES[@]}"; do
+        local pressures=${VARIABLES_PRESSURES[$variable]}
+        for pressure in $pressures; do
+            statements+=(
+                "'set lev $pressure'"
+                "'define $variable$pressure=${variable}'"
+                "'set sdfwrite -flt ${3}.${variable}_$pressure.nc'"
+                "'sdfwrite $variable$pressure'"
+            )
+        done
     done
 
     # Output all statement to template grads script.
