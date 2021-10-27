@@ -34,6 +34,9 @@ def plot_training_history(history, title):
     axs[1].plot(epochs, history.history['val_precision_score'],
                 label="Validation Precision Score", c='orange', linestyle='dotted')
 
+    axs[1].set_xticks(epochs)
+    axs[1].set_xticklabels(epochs)
+
     for ax in axs:
         ax.legend()
 
