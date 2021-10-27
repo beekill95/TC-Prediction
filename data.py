@@ -77,10 +77,20 @@ def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_sampl
 
 
 def _load_observation_data(observation_path, label):
-    data = xr.open_dataset(observation_path.decode('utf-8'), engine='netcdf4')
-    data = data.to_array().values
+    dataset = xr.open_dataset(observation_path.decode('utf-8'),
+                              engine='netcdf4')
+    data = []
+    for var in dataset.data_vars:
+        values = dataset[var].values
+
+        # For 2D dataarray, make it 3D.
+        if len(np.shape(values)) != 3:
+            values = np.expand_dims(values, 0)
+
+        data.append(values)
 
     # Reshape data so that it have channel_last format.
+    data = np.concatenate(data, axis=0)
     data = np.moveaxis(data, 0, -1)
 
     return data, [label]
@@ -88,7 +98,6 @@ def _load_observation_data(observation_path, label):
 
 def _set_shape(observation, label, data_shape):
     observation.set_shape(data_shape)
-    # tf.print(observation.shape)
     label.set_shape([1])
     return observation, label
 
@@ -111,9 +120,10 @@ def _filter_negative_samples(dataset, negative_samples_ratio):
 if __name__ == '__main__':
     tf.config.set_visible_devices([], 'GPU')
     a = load_data(
-        '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb',
+        '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb',
         batch_size=1,
-        negative_samples_ratio=3)
+        negative_samples_ratio=3,
+        data_shape=(41, 181, 13))
     a = iter(a)
     for i in range(2):
         # print(i)
