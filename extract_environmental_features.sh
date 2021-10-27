@@ -52,14 +52,29 @@ function generate_grads_extract_script() {
 
     for variable in "${!VARIABLES_PRESSURES[@]}"; do
         local pressures=${VARIABLES_PRESSURES[$variable]}
-        for pressure in $pressures; do
-            statements+=(
-                "'set lev $pressure'"
-                "'define $variable$pressure=${variable}'"
-                "'set sdfwrite -flt ${3}.${variable}_$pressure.nc'"
-                "'sdfwrite $variable$pressure'"
-            )
-        done
+        local max_pressure=$(sort -n <<< "${pressures// /$'\n'}" | tail -n 1)
+        local min_pressure=$(sort -n <<< "${pressures// /$'\n'}" | head -n 1)
+        local nc_output="${3}.${variable}.nc"
+
+        # If the we have multiple pressure levels,
+        # extract from maximum to minimum.
+        # Then, use `cdo` to select the one we're interested in.
+        if [[ "$max_pressure" != "$min_pressure" ]]; then
+            statements+=("'set lev $max_pressure $min_pressure'")
+        else
+            statements+=("'set lev $max_pressure'")
+        fi
+
+        statements+=(
+            "'define $variable=${variable}'"
+            "'set sdfwrite -flt $nc_output'"
+            "'sdfwrite $variable'"
+        )
+
+        # Only select pressure levels we want.
+        if [[ "$max_pressure" != "$min_pressure" ]]; then
+            statements+=("'!cdo -O sellevel,${pressures// /,} $nc_output $nc_output'")
+        fi
     done
 
     # Output all statement to template grads script.
