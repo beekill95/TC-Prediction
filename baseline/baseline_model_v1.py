@@ -20,24 +20,24 @@ sys.path.append('..')  # noqa
 import data
 import tf_metrics as tfm
 import tensorflow.keras as keras
-import tensorflow as tf
 import tensorflow.keras.layers as layers
+import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 import plot
 # -
 
-# Use ResNet
+# Use model from [Matsuoka et. al](https://doi.org/10.1186/s40645-018-0245-y)
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_TMP_HGT_UGRD_VGRD/6h_700mb'
 train_path = f'{data_path}_train'
 val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
-data_shape = (41, 181, 15)
+data_shape = (41, 181, 14)
 
 model = tf.keras.Sequential([
     layers.Conv2D(32, (3, 3), input_shape=(41, 181, 15)),
@@ -66,11 +66,10 @@ model.summary()
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    #loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+    # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
-        'mean_absolute_error',
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
         tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
@@ -93,13 +92,20 @@ downsampled_training = data.load_data(
     negative_samples_ratio=1)
 validation = data.load_data(val_path, data_shape=data_shape)
 
-# +
-#normalization_layer = preprocessing.Normalization(axis=-1)
-# normalization_layer.adapt(full_training)
+normalizer = preprocessing.Normalization(axis=-1)
+for X, y in iter(full_training):
+    normalizer.adapt(X)
+normalizer
 
-#full_training = full_training.map(lambda x, y: normalization_layer(x), y)
-#downsampled_training = downsampled_training.map(lambda x, y: normalization_layer(x), y)
-#validation = validation.map(lambda x, y: normalization_layer(x), y)
+
+# +
+def normalize_data(x, y):
+    return normalizer(x), y
+
+
+full_training = full_training.map(normalize_data)
+downsampled_training = downsampled_training.map(normalize_data)
+validation = validation.map(normalize_data)
 # -
 
 # # First stage
@@ -115,12 +121,12 @@ first_stage_history = model.fit(
     class_weight={1: 1., 0: 1.},
     shuffle=True,
     callbacks=[
-        #keras.callbacks.EarlyStopping(
-        #    monitor='val_f1_score',
-        #    mode='max',
-        #    verbose=1,
-        #    patience=10,
-        #    restore_best_weights=True),
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=10,
+            restore_best_weights=True),
     ]
 )
 
@@ -128,7 +134,7 @@ plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
 testing = data.load_data(test_path, data_shape=data_shape)
-#testing = testing.map(lambda x, y: normalization_layer(x), y)
+testing = testing.map(normalize_data)
 model.evaluate(testing)
 
 # # Second stage
@@ -140,7 +146,7 @@ second_stage_history = model.fit(
     full_training,
     epochs=epochs,
     validation_data=validation,
-    class_weight={1: 5., 0: 1.},
+    class_weight={1: 10., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(

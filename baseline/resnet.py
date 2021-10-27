@@ -32,11 +32,11 @@ import plot
 # Should change it to whatever the shape of the data we're going to use down there.
 
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 train_path = f'{data_path}_train'
 val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
-data_shape = (41, 181, 15)
+data_shape = (41, 181, 13)
 
 model = keras.applications.ResNet50(
     input_shape=data_shape,
