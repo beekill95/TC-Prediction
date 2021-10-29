@@ -4,6 +4,7 @@ channels:
   - defaults
 dependencies:
   - python=3.8
+  - basemap
   - bottleneck
   - bayesian-optimization
   - dask
@@ -16,6 +17,7 @@ dependencies:
   - pip:
     - -r requirements.txt
     - -r requirements-dev.txt
+  - papermill
   - tensorflow-gpu=2.4.1
   - xarray
 
