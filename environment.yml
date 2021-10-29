@@ -7,6 +7,7 @@ dependencies:
   - bottleneck
   - bayesian-optimization
   - dask
+  - keras-tuner
   - matplotlib
   - netCDF4
   - numpy
