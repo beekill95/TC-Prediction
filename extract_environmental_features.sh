@@ -52,8 +52,16 @@ function generate_grads_extract_script() {
 
     for variable in "${!VARIABLES_PRESSURES[@]}"; do
         local pressures=${VARIABLES_PRESSURES[$variable]}
-        local max_pressure=$(sort -n <<< "${pressures// /$'\n'}" | tail -n 1)
-        local min_pressure=$(sort -n <<< "${pressures// /$'\n'}" | head -n 1)
+        local use_pressure_ranges=false
+        if [[ "$pressures" == *"-"* ]]; then
+            use_pressure_ranges=true
+            local max_pressure="${pressures%%-*}"
+            local min_pressure="${pressures##*-}"
+        else
+            local max_pressure=$(sort -n <<< "${pressures// /$'\n'}" | tail -n 1)
+            local min_pressure=$(sort -n <<< "${pressures// /$'\n'}" | head -n 1)
+        fi
+
         local nc_output="${3}.${variable}.nc"
 
         # If the we have multiple pressure levels,
@@ -71,8 +79,9 @@ function generate_grads_extract_script() {
             "'sdfwrite $variable'"
         )
 
-        # Only select pressure levels we want.
-        if [[ "$max_pressure" != "$min_pressure" ]]; then
+        # Only select pressure levels we want if there are individual pressure levels,
+        # i.e. when there are multiple pressure levels, and no pressure ranges.
+        if [[ "$max_pressure" != "$min_pressure" ]] && [ $use_pressure_ranges = false ]; then
             statements+=("'!cdo -O sellevel,${pressures// /,} $nc_output $nc_output'")
         fi
     done
