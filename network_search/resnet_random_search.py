@@ -23,6 +23,7 @@ from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 import tf_metrics as tfm
 import data
+import plot
 import tensorflow.keras as keras
 # -
 
@@ -70,17 +71,17 @@ validation = validation.map(normalize_data)
 # This is the model we will be tuning.
 
 
-def build_resnet_18_model(hp):
+def build_resnet_50_model(hp):
     filters_size = [32, 64, 128, 256, 512, 1024]
 
     def stack_fn(x):
         x = resnet._stack1(x, hp.Choice(
             'conv2_filters', filters_size), 3, stride1=1, name='conv2')
         x = resnet._stack1(x, hp.Choice(
-            'conv2_filters', filters_size), 4, name='conv3')
+            'conv3_filters', filters_size), 4, name='conv3')
         x = resnet._stack1(x, hp.Choice(
-            'conv2_filters', filters_size), 6, name='conv4')
-        return resnet._stack1(x, hp.Choice('conv2_filters', filters_size), 3, name='conv5')
+            'conv4_filters', filters_size), 6, name='conv4')
+        return resnet._stack1(x, hp.Choice('conv5_filters', filters_size), 3, name='conv5')
 
     model = resnet._ResNet(stack_fn,
                            False,
@@ -109,17 +110,18 @@ def build_resnet_18_model(hp):
 
 
 tuner = kt.RandomSearch(
-    build_resnet_18_model,
+    build_resnet_50_model,
     objective=kt.Objective('val_f1_score', direction='max'),
-    max_trials=10
+    max_trials=10,
+    directory='random_resnet18'
 )
 tuner.search(
     downsampled_training,
-    epochs = 50,
-    validation_data = validation,
-    class_weight = {1: 1., 0: 1.},
-    shuffle = True,
-    callbacks = [
+    epochs=50,
+    validation_data=validation,
+    class_weight={1: 1., 0: 1.},
+    shuffle=True,
+    callbacks=[
         keras.callbacks.EarlyStopping(
             monitor='val_f1_score',
             mode='max',
@@ -128,3 +130,42 @@ tuner.search(
             restore_best_weights=True),
     ]
 )
+
+tuner.results_summary()
+
+# After we got the result, first,
+# test on the testing to see what kind of performance we're getting.
+
+# +
+model = tuner.get_best_models()[0]
+
+testing = data.load_data(test_path, data_shape=data_shape)
+testing = testing.map(normalize_data)
+model.evaluate(testing)
+# -
+
+# Finally, train on full dataset.
+
+# +
+epochs = 50
+second_stage_history = model.fit(
+    full_training,
+    epochs=epochs,
+    validation_data=validation,
+    class_weight={1: 10., 0: 1.},
+    shuffle=True,
+    callbacks=[
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=10,
+            restore_best_weights=True),
+    ])
+
+
+plot.plot_training_history(second_stage_history, "")
+# -
+
+# And get the result.
+model.evaluate(testing)
