@@ -12,7 +12,14 @@ def _extract_date_from_observation_path(path):
     return ''.join(filename.split('_')[1:-1])
 
 
-def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_samples_ratio=None):
+def load_data(
+        data_dir,
+        data_shape,
+        batch_size=32,
+        shuffle=False,
+        negative_samples_ratio=None,
+        prefetch_batch=1,
+        include_tc_position=False):
     """
     Load data from the given directory.
 
@@ -23,6 +30,7 @@ def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_sampl
     :param negative_samples_ratio: (default: None) the ratio of negative samples to positive samples.
     For instance, if the ratio is 3, then for 1 positive sample, there will be three negative samples.
     If None is passed, all the negative samples are taken.
+    :param include_tc_position: whether we should include tc position along with label. Default to False.
     :returns:
     """
     # Get a list of all observation data files.
@@ -36,11 +44,14 @@ def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_sampl
         os.path.join(data_dir, 'tc.csv'),
         dtype={
             'Observation': str,
-            'TC': np.int,
+            'TC': int,
             'Genesis': str,
             'End': str,
-            'Latitude': str,
-            'Longitude': str,
+            'Latitude': np.float32,
+            'Longitude': np.float32,
+        }, na_values={
+            'Latitude': 0,
+            'Longitude': 0,
         })
 
     # Merge observations and labels into single dataframe.
@@ -52,16 +63,22 @@ def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_sampl
         right_on='Observation')
     dataset = _filter_negative_samples(dataset, negative_samples_ratio)
 
+    # FIX: Due to my mistake, the latitude sign is negative, but it should be positive
+    dataset['Latitude'] = -dataset['Latitude'].fillna(0)
+    dataset['Longitude'] = dataset['Longitude'].fillna(0)
+
     dataset = tf.data.Dataset.from_tensor_slices(
-        (dataset['Path'], dataset['TC']))
+        (dataset['Path'], dataset[['TC', 'Latitude', 'Longitude']] if include_tc_position else dataset['TC']))
     if shuffle:
         dataset = dataset.shuffle(len(observations))
 
     # Load given dataset to memory.
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
-        _load_observation_data,
+        lambda x, y: _load_observation_data(x, y, include_tc_position),
         inp=[path, tc],
-        Tout=[tf.float32, tf.int64],
+        Tout=([tf.float32, tf.float64]
+              if include_tc_position
+              else [tf.float32, tf.int64]),
         name='load_observation_data'),
         num_parallel_calls=tf.data.AUTOTUNE,
         deterministic=False,
@@ -70,13 +87,22 @@ def load_data(data_dir, data_shape, batch_size=32, shuffle=False, negative_sampl
     # Tensorflow should figure out the shape of the output of previous map,
     # but it doesn't, so we have to do it our self.
     # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
-    dataset = dataset.map(lambda observation, tc: _set_shape(
-        observation, tc, data_shape))
+    dataset = dataset.map(lambda observation, tc: _set_shape(observation,
+                                                             tc,
+                                                             data_shape,
+                                                             include_tc_position))
 
-    return dataset.batch(batch_size)
+    # Cache the dataset for better performance.
+    dataset = dataset.cache()
+
+    # Batch the dataset.
+    dataset = dataset.batch(batch_size)
+
+    # Always prefetch the data for better performance.
+    return dataset.prefetch(prefetch_batch)
 
 
-def _load_observation_data(observation_path, label):
+def _load_observation_data(observation_path, label, include_tc_position):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
                               engine='netcdf4')
     data = []
@@ -93,12 +119,12 @@ def _load_observation_data(observation_path, label):
     data = np.concatenate(data, axis=0)
     data = np.moveaxis(data, 0, -1)
 
-    return data, [label]
+    return data, label if include_tc_position else [label]
 
 
-def _set_shape(observation, label, data_shape):
+def _set_shape(observation, label, data_shape, include_tc_position):
     observation.set_shape(data_shape)
-    label.set_shape([1])
+    label.set_shape([3] if include_tc_position else [1])
     return observation, label
 
 
@@ -123,7 +149,8 @@ if __name__ == '__main__':
         '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb',
         batch_size=1,
         negative_samples_ratio=3,
-        data_shape=(41, 181, 13))
+        data_shape=(41, 181, 13),
+        include_tc_position=False)
     a = iter(a)
     for i in range(2):
         # print(i)
