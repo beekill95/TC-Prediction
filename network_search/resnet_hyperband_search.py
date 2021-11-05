@@ -24,11 +24,16 @@ import tensorflow_addons as tfa
 import tf_metrics as tfm
 import data
 import plot
+import tensorflow as tf
 import tensorflow.keras as keras
 # -
 
-# # Randomize Search with Resnet
+# # Hyperband Search with Resnet
 
+
+# + tags=["parameters"]
+project_start_time = '2021Nov2_1518'
+# -
 
 # First, load training data and validation data.
 
@@ -52,10 +57,12 @@ downsampled_training = data.load_data(
     negative_samples_ratio=1)
 validation = data.load_data(val_path, data_shape=data_shape)
 
-normalizer = preprocessing.Normalization(axis=-1)
+normalizer = tf.keras.layers.experimental.preprocessing.Normalization(axis=-1)
 for X, y in iter(full_training):
     normalizer.adapt(X)
-normalizer
+
+
+def normalizer(x): return x
 
 
 # +
@@ -73,15 +80,34 @@ validation = validation.map(normalize_data)
 
 def build_resnet_50_model(hp):
     filters_size = [32, 64, 128, 256, 512, 1024]
+    nb_blocks = [2, 3, 4, 5, 6, 7, 8]
 
     def stack_fn(x):
-        x = resnet._stack1(x, hp.Choice(
-            'conv2_filters', filters_size), 3, stride1=1, name='conv2')
-        x = resnet._stack1(x, hp.Choice(
-            'conv3_filters', filters_size), 4, name='conv3')
-        x = resnet._stack1(x, hp.Choice(
-            'conv4_filters', filters_size), 6, name='conv4')
-        return resnet._stack1(x, hp.Choice('conv5_filters', filters_size), 3, name='conv5')
+        x = resnet._stack1(
+            x,
+            hp.Choice('conv2_filters', filters_size),
+            hp.Choice('conv2_nb_blocks', nb_blocks),
+            #3,
+            stride1=1,
+            name='conv2')
+        x = resnet._stack1(
+            x,
+            hp.Choice('conv3_filters', filters_size),
+            hp.Choice('conv3_nb_blocks', nb_blocks),
+            #4,
+            name='conv3')
+        x = resnet._stack1(
+            x,
+            hp.Choice('conv4_filters', filters_size),
+            hp.Choice('conv4_nb_blocks', nb_blocks),
+            #6,
+            name='conv4')
+        return resnet._stack1(
+            x,
+            hp.Choice('conv5_filters', filters_size),
+            hp.Choice('conv5_nb_blocks', nb_blocks),
+            #3,
+            name='conv5')
 
     model = resnet._ResNet(stack_fn,
                            False,
@@ -94,7 +120,8 @@ def build_resnet_50_model(hp):
                            classes=1,
                            classifier_activation=None)
     model.compile(
-        optimizer='adam',
+        optimizer=keras.optimizers.Adam(
+            learning_rate=hp.Choice('learning_rate', [0.001, 1e-3, 1e-4])),
         loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
         metrics=[
             'binary_accuracy',
@@ -110,11 +137,11 @@ def build_resnet_50_model(hp):
 
 
 tuner = kt.Hyperband(
-    build_resnet_50_model, 
+    build_resnet_50_model,
     objective=kt.Objective('val_f1_score', direction='max'),
-    max_epochs=50,
+    max_epochs=80,
     directory='hyperband_resnet50',
-    project_name='depth_tunning_2021Oct31_1506'
+    project_name=f'depth_blocks_learning_rate_{project_start_time}'
 )
 tuner.search(
     downsampled_training,
