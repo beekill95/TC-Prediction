@@ -27,3 +27,28 @@ class PrecisionScore(FromLogitsMixin, tf.metrics.Precision):
 
 class RecallScore(FromLogitsMixin, tf.metrics.Recall):
     ...
+
+
+class NthClassificationMixin:
+    def __init__(self, nth=1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._nth = nth
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        return super().update_state(y_true[:, :self._nth], y_pred[:, :self._nth], sample_weight)
+
+
+class NthF1Score(NthClassificationMixin, F1Score):
+    ...
+
+
+class NthPrecisionScore(NthClassificationMixin, PrecisionScore):
+    ...
+
+
+class NthRecallScore(NthClassificationMixin, RecallScore):
+    ...
+
+
+class NthBinaryAccuracy(NthClassificationMixin, tf.metrics.BinaryAccuracy):
+    ...
