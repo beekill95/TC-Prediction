@@ -19,7 +19,8 @@ def load_data(
         shuffle=False,
         negative_samples_ratio=None,
         prefetch_batch=1,
-        include_tc_position=False):
+        include_tc_position=False,
+        subset=None):
     """
     Load data from the given directory.
 
@@ -31,6 +32,7 @@ def load_data(
     For instance, if the ratio is 3, then for 1 positive sample, there will be three negative samples.
     If None is passed, all the negative samples are taken.
     :param include_tc_position: whether we should include tc position along with label. Default to False.
+    :param subset: allow selecting only a portion of data.
     :returns:
     """
     # Get a list of all observation data files.
@@ -74,7 +76,10 @@ def load_data(
 
     # Load given dataset to memory.
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
-        lambda x, y: _load_observation_data(x, y, include_tc_position),
+        lambda x, y: _load_observation_data(
+            x, y,
+            include_tc_position,
+            subset=subset),
         inp=[path, tc],
         Tout=([tf.float32, tf.float64]
               if include_tc_position
@@ -102,12 +107,16 @@ def load_data(
     return dataset.prefetch(prefetch_batch)
 
 
-def _load_observation_data(observation_path, label, include_tc_position):
+def _load_observation_data(observation_path, label, include_tc_position, subset=None):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
                               engine='netcdf4')
+
     data = []
     for var in dataset.data_vars:
-        values = dataset[var].values
+        if subset is not None and var in subset:
+            values = dataset[var].sel(lev=subset[var]).values
+        else:
+            values = dataset[var].values
 
         # For 2D dataarray, make it 3D.
         if len(np.shape(values)) != 3:
