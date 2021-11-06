@@ -15,17 +15,15 @@
 
 # +
 import sys  # noqa
-sys.path.append('..')  # noqa
+sys.path.append('../..')  # noqa
 
-import data
-import models.layers
-import models.resnet_att
-import tf_metrics as tfm
+from tc_formation import data, plot, tf_metrics as tfm
+import tc_formation.models.resnet_att as resnet_att
 import tensorflow.keras as keras
 import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
-import plot
+from datetime import datetime
 # -
 
 # Use ResNet
@@ -33,19 +31,33 @@ import plot
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
+exp_name = 'attention_resnet'
+runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 train_path = f'{data_path}_train'
 val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
+subset = dict(
+    absvprs=[900, 750],
+    rhprs=[750],
+    tmpprs=[900, 500],
+    hgtprs=[500],
+    vvelprs=[500],
+    ugrdprs=[800, 200],
+    vgrdprs=[800, 200],
+)
 data_shape = (41, 181, 13)
 
-model = models.resnet_att.ResNet50Att(
+model = resnet_att.ResNet50Att(
     input_shape=data_shape,
     include_top=True,
     classes=1,
-    classifier_activation=None,)
+    classifier_activation=None,
+    spatial_attention=True,
+    channel_attention=True,
+)
 model.summary()
 
 # Build the model using BinaryCrossentropy loss
@@ -69,14 +81,16 @@ full_training = data.load_data(
     data_shape=data_shape,
     batch_size=64,
     shuffle=True,
+    subset=subset,
 )
 downsampled_training = data.load_data(
     train_path,
     data_shape=data_shape,
     batch_size=64,
     shuffle=True,
+    subset=subset,
     negative_samples_ratio=1)
-validation = data.load_data(val_path, data_shape=data_shape)
+validation = data.load_data(val_path, data_shape=data_shape, subset=subset)
 
 normalizer = preprocessing.Normalization(axis=-1)
 for X, y in iter(full_training):
@@ -99,9 +113,9 @@ validation = validation.map(normalize_data)
 # train the model on the down-sampled data.
 
 # +
-epochs = 50
+epochs = 150
 first_stage_history = model.fit(
-    #downsampled_training,
+    # downsampled_training,
     # testing with full training
     full_training,
     epochs=epochs,
@@ -113,15 +127,21 @@ first_stage_history = model.fit(
             monitor='val_f1_score',
             mode='max',
             verbose=1,
-            patience=50,
+            patience=20,
             restore_best_weights=True),
+        keras.callbacks.ModelCheckpoint(
+            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",
+            monitor='val_f1_score',
+            mode='max',
+            save_best_only=True,
+        ),
     ]
 )
 
 plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
-testing = data.load_data(test_path, data_shape=data_shape)
+testing = data.load_data(test_path, data_shape=data_shape, subset=subset)
 testing = testing.map(normalize_data)
 model.evaluate(testing)
 
@@ -130,25 +150,25 @@ model.evaluate(testing)
 # train the model on full dataset.
 
 # +
-second_stage_history = model.fit(
-    full_training,
-    epochs=epochs,
-    validation_data=validation,
-    class_weight={1: 10., 0: 1.},
-    shuffle=True,
-    callbacks=[
-        keras.callbacks.EarlyStopping(
-            monitor='val_f1_score',
-            mode='max',
-            verbose=1,
-            patience=10,
-            restore_best_weights=True),
-    ])
+# second_stage_history = model.fit(
+#     full_training,
+#     epochs=epochs,
+#     validation_data=validation,
+#     class_weight={1: 10., 0: 1.},
+#     shuffle=True,
+#     callbacks=[
+#         keras.callbacks.EarlyStopping(
+#             monitor='val_f1_score',
+#             mode='max',
+#             verbose=1,
+#             patience=10,
+#             restore_best_weights=True),
+#     ])
 
 
-plot.plot_training_history(second_stage_history, "")
+# plot.plot_training_history(second_stage_history, "")
 # -
 
 # After the model is trained, we will test it on test data.
 
-model.evaluate(testing)
+# model.evaluate(testing)
