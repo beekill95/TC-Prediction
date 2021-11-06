@@ -18,6 +18,8 @@ import sys  # noqa
 sys.path.append('..')  # noqa
 
 import data
+import models.layers
+import models.resnet
 import tf_metrics as tfm
 import tensorflow.keras as keras
 import tensorflow as tf
@@ -32,19 +34,31 @@ import plot
 # Should change it to whatever the shape of the data we're going to use down there.
 
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+#data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 train_path = f'{data_path}_train'
 val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
-data_shape = (41, 181, 13)
+data_shape = (41, 181, 135)
 
-model = keras.applications.ResNet50(
+# input_tensor = keras.layers.Input(data_shape)
+# gated_input = models.layers.features_gated_block(input_tensor)
+#
+# base_model = keras.applications.ResNet50(
+#     input_tensor=gated_input,
+#     weights=None,
+#     include_top=True,
+#     classes=1,
+#     classifier_activation=None,
+# )
+#
+# model = keras.Model(inputs=input_tensor, outputs=base_model.outputs)
+model = models.resnet.ResNet18(
     input_shape=data_shape,
-    weights=None,
     include_top=True,
     classes=1,
-    classifier_activation=None,
-)
+    classifier_activation=None,)
+model.summary()
 
 # Build the model using BinaryCrossentropy loss
 

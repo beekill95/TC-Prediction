@@ -18,4 +18,4 @@ conda activate tc_prediction
 
 # Start the same job on different nodes.
 cd network_search
-srun papermill resnet_hyperband_search.ipynb resnet_hyperband_search_output.ipynb -p project_start_time '2021Nov4_1602'
+srun papermill resnet_hyperband_search.ipynb resnet_hyperband_search_output.ipynb -p project_start_time '2021Nov5_1127'

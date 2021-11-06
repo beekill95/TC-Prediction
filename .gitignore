@@ -139,3 +139,9 @@ cython_debug/
 
 # Our stuffs
 *.ipynb
+logs/
+
+# Keras Tuner stuffs
+**/*/trial_*/
+oracle.json
+tuner*.json

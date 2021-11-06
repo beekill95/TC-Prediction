@@ -38,6 +38,40 @@ def attention_layer(input_tensor, spatial_attention=True, channel_attention=True
     return att
 
 
+def tc_position_regression_layers(input_layer, hidden_layers=[2048, 2048], output_activation=None, name=None):
+    x = input_layer
+
+    for i, layer_size in enumerate(hidden_layers):
+        x = keras.layers.Dense(
+            units=layer_size,
+            name=f'{name}_tc_position_regression_dense_{i}',
+            activation='relu')(x)
+
+    x = keras.layers.Dense(
+        units=2,
+        name=f'{name}_tc_position_regression_output',
+        activation=output_activation)(x)
+
+    return x
+
+
+def tc_formation_prediction_layers(input_layer, hidden_layers=[2048, 2048], output_activation=None, name=None):
+    x = input_layer
+
+    for i, layer_size in enumerate(hidden_layers):
+        x = keras.layers.Dense(
+            units=layer_size,
+            name=f'{name}_tc_formation_pred_dense_{i}',
+            activation='relu')(x)
+
+    x = keras.layers.Dense(
+        units=1,
+        name=f'{name}_tc_formation_pred_output',
+        activation=output_activation)(x)
+
+    return x
+
+
 if __name__ == '__main__':
     inp = keras.Input((4, 10, 3))
 

@@ -17,7 +17,7 @@ def plot_training_history(history, title):
                 label="Train Loss", c='b')
     axs[0].plot(epochs, history.history['val_loss'],
                 label="Validation Loss", c='orange')
-    axs[0].set_ylim(0.0, 1.0)
+    # axs[0].set_ylim(0.0, 1.0)
 
     # Plot all the scores.
     axs[1].plot(epochs, history.history['f1_score'],

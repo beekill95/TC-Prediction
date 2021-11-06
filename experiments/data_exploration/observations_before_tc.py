@@ -44,7 +44,7 @@ tc[(tc['TC'] == 1) & ~((tc['Latitude'] <= -5) & (tc['Latitude'] >= -45))]
 
 # +
 ds = xr.open_dataset(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb/fnl_20080501_00_00.nc')
+    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb/fnl_20210809_12_00.nc')
 lat = ds['lat']
 lon = ds['lon']
 
@@ -52,10 +52,12 @@ ds
 # -
 
 nbuf = 7
-buff = nbuf*0.03
+buff = 0
 
 # +
-fig, ax = plt.subplots(figsize=(20, 10))
+import numpy as np
+
+fig, ax = plt.subplots(figsize=(30, 15))
 basemap = Basemap(
     projection='cyl',
     llcrnrlon=np.nanmin(lon + buff),
@@ -78,10 +80,25 @@ basemap.drawlsmask(land_color='Linen', ocean_color='#CCFFFF')
 basemap.drawcounties()
 
 x, y = np.meshgrid(lon, lat)
-dclevs = np.arange(-1, 1, 0.2)
-nx = 351
-ny = 351
 bigarray = ds['tmpsfc']
-cs = basemap.contourf(x, y, bigarray, dclevs, cmap='bwr')
+wind_u = ds['ugrdprs'][1,:,:]
+wind_v = ds['vgrdprs'][1,:,:]
+#cs = basemap.contourf(x, y, wind_v, cmap='rainbow')
 cs = basemap.contourf(x, y, bigarray, cmap='rainbow')
-cb = basemap.colorbar(cs, "right", size="5%", pad="2%")
+#uv = basemap.barbs(x, y, wind_u, wind_v)
+
+speed = np.sqrt(wind_u*wind_u + wind_v*wind_v)
+#uv = basemap.streamplot(x, y, wind_u, wind_v, latlon=True)
+
+u_mask=wind_u[(wind_u > 17) | (wind_u < -17)]
+v_mask=wind_v[(wind_v > 17) | (wind_v < -17)]
+uv = basemap.quiver(x, y, u_mask, v_mask)
+#cb = basemap.colorbar(cs, "right", size="5%", pad="2%")
+# -
+
+np.nanmin(wind_u)
+(wind_u > 17) | (wind_u < -17)
+
+a = np.asarray([True, False])
+b = np.asarray([False, False])
+a | b

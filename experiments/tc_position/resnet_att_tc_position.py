@@ -19,7 +19,7 @@ sys.path.append('..')  # noqa
 
 import data
 import models.layers
-import models.resnet
+import models.resnet_att
 import tf_metrics as tfm
 import tensorflow.keras as keras
 import tensorflow as tf
@@ -50,7 +50,7 @@ val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
 data_shape = (41, 181, 13)
 
-model = models.resnet.ResNet18(
+model = models.resnet_att.ResNet50Att(
     input_shape=data_shape,
     include_top=True,
     classes=3,
@@ -123,18 +123,20 @@ validation = validation.map(normalize_data)
 # +
 epochs = 75
 first_stage_history = model.fit(
-    downsampled_training,
+    # downsampled_training,
+    # Experiment with full training.
+    full_training,
     epochs=epochs,
     validation_data=validation,
     #class_weight={1: 1., 0: 1.},
     shuffle=True,
     callbacks=[
-                keras.callbacks.EarlyStopping(
-                    monitor='val_f1_score',
-                    mode='max',
-                    verbose=1,
-                    patience=20,
-                    restore_best_weights=True),
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=50,
+            restore_best_weights=True),
     ]
 )
 
@@ -152,25 +154,25 @@ model.evaluate(testing)
 # train the model on full dataset.
 
 # +
-second_stage_history = model.fit(
-    full_training,
-    epochs=epochs,
-    validation_data=validation,
-    #class_weight={1: 10., 0: 1.},
-    shuffle=True,
-    callbacks=[
-        keras.callbacks.EarlyStopping(
-            monitor='val_f1_score',
-            mode='max',
-            verbose=1,
-            patience=10,
-            restore_best_weights=True),
-    ])
-
-
-plot.plot_training_history(second_stage_history, "")
+# second_stage_history = model.fit(
+#     full_training,
+#     epochs=epochs,
+#     validation_data=validation,
+#     #class_weight={1: 10., 0: 1.},
+#     shuffle=True,
+#     callbacks=[
+#         keras.callbacks.EarlyStopping(
+#             monitor='val_f1_score',
+#             mode='max',
+#             verbose=1,
+#             patience=10,
+#             restore_best_weights=True),
+#     ])
+#
+#
+# plot.plot_training_history(second_stage_history, "")
 # -
 
 # After the model is trained, we will test it on test data.
 
-model.evaluate(testing)
+# model.evaluate(testing)
