@@ -4,8 +4,8 @@
 conda activate tc_prediction
 
 # Then, forward port back to h2
-server="h2"
-port=8888
+server=${1-h2}
+port=${2-8888}
 echo "Logging into $server to forward port $port:"
 ssh -N -f -R $port:localhost:$port $server
 

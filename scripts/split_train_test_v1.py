@@ -35,17 +35,12 @@ def parse_date(datestr: str):
 if __name__ == '__main__':
     args = parse_arguments()
 
-    indir = os.path.join(args.indir, '')
-    if not os.path.isdir(indir):
-        raise ValueError(f'ERR: Invalid directory {indir}')
-
-    _, indir_name = os.path.split(os.path.dirname(indir))
-
     # Make sure that validation start date is before than the test data.
     if args.val_start is not None:
         assert args.val_start < args.test_start, f'ERR: Validation date {args.val_start} must be before test date {args.test_start}'
 
     tc = pd.read_csv(args.labels)
+    tc['Date'] = pd.to_datetime(tc['Date'], format='%Y-%m-%d %H:%M:%S')
 
     # Obtain test labels.
     test_date = parse_date(args.test_start)
@@ -53,7 +48,7 @@ if __name__ == '__main__':
 
     # Obtain val and train labels.
     if args.val_start:
-        val_date = parse_date(args.test_start)
+        val_date = parse_date(args.val_start)
         val_labels = tc[(tc['Date'] >= val_date) & (tc['Date'] < test_date)]
         train_labels = tc[tc['Date'] < val_date]
     else:

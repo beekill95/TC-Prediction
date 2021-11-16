@@ -51,10 +51,11 @@ def parse_arguments(args=None):
 
     parser.add_argument(
         '--leadtime',
+        nargs='+',
         dest='leadtime',
         action='store',
         type=int,
-        default=12,
+        default=[12],
         help='The lead time to generate the data. Default is 12h.')
 
     parser.add_argument(
@@ -216,7 +217,7 @@ def create_labels(
         observations_dir: str,
         tc: pd.DataFrame,
         observation_ranges: Tuple[datetime, datetime],
-        leadtime: int):
+        leadtimes: List[int]):
     labels = []
 
     for observation_filename in glob.iglob(os.path.join(observations_dir, '*.nc')):
@@ -224,33 +225,37 @@ def create_labels(
         if not (observation_ranges[0] <= observation_date <= observation_ranges[1]):
             continue
 
-        next_leadtime = observation_date + timedelta(hours=leadtime)
-        has_tropical = tc['First Observed'] == next_leadtime
+        has_tropical_cnt = 0
 
-        for _, tc_row in tc[has_tropical].iterrows():
-            observation_label = {
-                'Date': observation_date,
-                'TC': True,
-                'TC Id': tc_row['Id'],
-                'First Observed': tc_row['First Observed'],
-                'Last Observed': tc_row['Last Observed'],
-                'Latitude': tc_row['Latitude'],
-                'Longitude': tc_row['Longitude'],
-                'First Observed Type': tc_row['First Observed Type'],
-                'Will Develop to TC': tc_row['Developing to TC'],
-                'Developing Date': tc_row['Developing Date'],
-                'Path': observation_filename,
-            }
-            labels.append(observation_label)
+        for leadtime in leadtimes:
+            next_leadtime = observation_date + timedelta(hours=leadtime)
+            has_tropical = tc['First Observed'] == next_leadtime
+            has_tropical_cnt += len(tc[has_tropical])
 
-        if len(tc[has_tropical]) == 0:
+            for _, tc_row in tc[has_tropical].iterrows():
+                observation_label = {
+                    'Date': observation_date,
+                    'TC': True,
+                    'TC Id': tc_row['Id'],
+                    'First Observed': tc_row['First Observed'],
+                    'Last Observed': tc_row['Last Observed'],
+                    'Latitude': tc_row['Latitude'],
+                    'Longitude': tc_row['Longitude'],
+                    'First Observed Type': tc_row['First Observed Type'],
+                    'Will Develop to TC': tc_row['Developing to TC'],
+                    'Developing Date': tc_row['Developing Date'],
+                    'Path': observation_filename,
+                }
+                labels.append(observation_label)
+
+        if has_tropical_cnt == 0:
             is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
             if len(tc[is_tc_occuring]) == 0:
                 labels.append({
                     'Date': observation_date,
                     'TC': False,
                     'Path': observation_filename,
-                    })
+                })
 
     labels = pd.DataFrame(
             labels,
@@ -297,9 +302,10 @@ if __name__ == '__main__':
         observations_dir=args.observations_dir,
         tc=tc_df,
         observation_ranges=(observation_start_date, observation_end_date),
-        leadtime=args.leadtime,
+        leadtimes=args.leadtime,
     )
+    leadtime_str = '_'.join(f'{l}h' for l in args.leadtime)
     labels.to_csv(
-        os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{args.leadtime}h.csv'),
+        os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}.csv'),
         index=False
     )
