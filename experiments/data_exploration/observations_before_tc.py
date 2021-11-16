@@ -28,23 +28,20 @@
 # %dotenv
 
 # +
-import os
-import sys
-sys.path.append(os.environ['PYTHONPATH'])
+import sys  # noqa
+sys.path.append('../..')  # noqa
 
-print(os.environ['PYTHONPATH'], os.environ['PATH'])
-
-
-import matplotlib.pyplot as plt
-from mpl_toolkits.basemap import Basemap
-import numpy as np
-import xarray as xr
-import pandas as pd
 import tc_formation.plots.observations as obs_plt
+import tc_formation.data as data
+import pandas as pd
+import xarray as xr
+import os
+import numpy as np
+import matplotlib.pyplot as plt
 # -
 
 # Load all the TC to see what we got.
-data_home = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb/'
+data_home = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
 tc = pd.read_csv(os.path.join(data_home, 'tc.csv'), dtype={
     'Observation': 'str',
     'Genesis': 'str',
@@ -52,75 +49,67 @@ tc = pd.read_csv(os.path.join(data_home, 'tc.csv'), dtype={
 })
 tc[tc['TC'] == 1]
 
+# +
 # Of these storms, how many of them have positive latitude
-tc[(tc['TC'] == 1) & (tc['Latitude'] > 0)]
-
-# Of these storms, how many of them have latitude from 5 to 45
-tc[(tc['TC'] == 1) & (tc['Latitude'] <= -5) & (tc['Latitude'] >= -45)]
-
-# Of these storms, how many of them have latitude outside 5 to 45
-tc[(tc['TC'] == 1) & ~((tc['Latitude'] <= -5) & (tc['Latitude'] >= -45))]
+# tc[(tc['TC'] == 1) & (tc['Latitude'] > 0)]
 
 # +
-ds = xr.open_dataset(
-    '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb/fnl_20210731_00_00.nc')
+# Of these storms, how many of them have latitude from 5 to 45
+# tc[(tc['TC'] == 1) & (tc['Latitude'] <= -5) & (tc['Latitude'] >= -45)]
+
+# +
+# Of these storms, how many of them have latitude outside 5 to 45
+#tc[(tc['TC'] == 1) & ~((tc['Latitude'] <= -5) & (tc['Latitude'] >= -45))]
+
+# +
+ds = xr.open_dataset(os.path.join(data_home, 'fnl_20210822_12_00.nc'))
 lat = ds['lat']
 lon = ds['lon']
 
 ds
-# -
-
-nbuf = 7
-buff = 0
 
 # +
-# fig, ax = plt.subplots(figsize=(30, 15))
-# basemap = Basemap(
-#    projection='cyl',
-#    llcrnrlon=np.nanmin(lon + buff),
-#    llcrnrlat=np.nanmin(lat + buff),
-#    urcrnrlon=np.nanmax(lon - buff),
-#    urcrnrlat=np.nanmax(lat - buff),
-#    resolution='h')
-
-# parallels = np.arange(-90, 90, 5.)
-# meridians = np.arange(-180, 180, 5.)
-# basemap.drawparallels(
-#    parallels, labels=[1, 0, 0, 0], fontsize=18, color="grey")
-# basemap.drawmeridians(
-#    meridians, labels=[0, 0, 0, 1], fontsize=18, color="grey", rotation=45)
-
-# basemap.drawcoastlines()
-# basemap.drawstates()
-# basemap.drawcountries()
-# basemap.drawlsmask(land_color='Linen', ocean_color='#CCFFFF')
-# basemap.drawcounties()
-
-# x, y = np.meshgrid(lon, lat)
-# bigarray = ds['tmpsfc']
-# wind_u = ds['ugrdprs'].sel(lev=800)
-# wind_v = ds['vgrdprs'].sel(lev=800)
-# #cs = basemap.contourf(x, y, wind_v, cmap='rainbow')
-# cs = basemap.contourf(x, y, bigarray, cmap='rainbow')
-# uv = basemap.barbs(x, y, wind_u, wind_v)
-
-# #speed = np.sqrt(wind_u*wind_u + wind_v*wind_v)
-# #uv = basemap.streamplot(x, y, wind_u, wind_v, latlon=True)
-
-# #u_mask = wind_u[(wind_u > 17) | (wind_u < -17)]
-# #v_mask = wind_v[(wind_v > 17) | (wind_v < -17)]
-# #uv = basemap.quiver(x, y, u_mask, v_mask)
-# #cb = basemap.colorbar(cs, "right", size="5%", pad="2%")
-
-# +
-levels=[800, 200]
-nb_levels=len(levels)
+levels = [800, 200]
+nb_levels = len(levels)
 fig, axs = plt.subplots(nrows=nb_levels, ncols=1, figsize=(30, 8 * nb_levels))
 
 for lev, ax in zip(levels, axs):
-    obs_plt.plot_variable(dataset=ds, variable='tmpsfc', ax=ax)
+    obs_plt.plot_variable(dataset=ds, variable='tmpsfc', ax=ax, contourf_kwargs=dict(levels=np.arange(270, 320, 2)))
     obs_plt.plot_wind(dataset=ds, pressure_level={'lev': lev}, ax=ax)
     ax.set_title(f'Wind field at {lev}mb & surface temperature')
 # -
 
-ds['ugrdprs'].sel(lev=[800, 200])
+# We will randomly sample 5 date with tc, and 5 days without tc
+# to see what are the different between them.
+
+# +
+tc_test = data.load_tc_with_observation_path(f'{data_home}_test')
+
+has_tc = tc_test[tc_test['TC'] == 1].sample(5)
+no_tc = tc_test[tc_test['TC'] == 0].sample(5)
+
+
+def plot_observations_in_df(df, title):
+    for _, df_row in df.iterrows():
+        ds_ = xr.open_dataset(df_row['Path'])
+        print(df_row['Path'], df_row['Genesis'], df_row['Latitude'], df_row['Longitude'])
+
+        levels = [800, 200]
+        nb_levels = len(levels)
+        fig, axs = plt.subplots(nrows=nb_levels, ncols=1,
+                                figsize=(30, 8 * nb_levels))
+
+        fig.suptitle(title)
+        for lev, ax in zip(levels, axs):
+            obs_plt.plot_variable(dataset=ds_, variable='tmpsfc', ax=ax)
+            obs_plt.plot_wind(dataset=ds_, pressure_level={'lev': lev}, ax=ax)
+            ax.set_title(f'Wind field at {lev}mb & surface temperature')
+            
+        display(fig)
+        plt.close(fig)
+
+
+plot_observations_in_df(has_tc, 'Observations on date with TC')
+# -
+
+plot_observations_in_df(no_tc, 'Observations on date without TC')
