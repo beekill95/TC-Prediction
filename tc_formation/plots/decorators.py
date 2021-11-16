@@ -21,7 +21,7 @@ def _with_basemap(func):
                 ax=ax)
 
             parallels = np.arange(-90, 90, 5.)
-            meridians = np.arange(-180, 180, 5.)
+            meridians = np.arange(-180, 180, 20)
             basemap.drawparallels(
                 parallels,
                 labels=[1, 0, 0, 0],
@@ -31,8 +31,7 @@ def _with_basemap(func):
                 meridians,
                 labels=[0, 0, 0, 1],
                 fontsize=18,
-                color="grey",
-                rotation=45)
+                color="grey")
 
             basemap.drawcoastlines()
             basemap.drawstates()

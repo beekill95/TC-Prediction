@@ -12,6 +12,62 @@ def _extract_date_from_observation_path(path):
     return ''.join(filename.split('_')[1:-1])
 
 
+def load_tc_with_observation_path(data_dir):
+    """
+    Load tc.csv and all available observation files into one nice dataframe for easy processing.
+
+    :param data_dir: path to directory contains all observation files and tc.csv
+    :returns: a dataframe contains the content of tc.csv and path to corresponding observation file.
+    """
+    # Get a list of all observation data files.
+    observations = glob.glob(os.path.join(data_dir, '*.nc'))
+    observations = pd.DataFrame(observations, columns=['Path'])
+    observations['Date'] = observations['Path'].apply(
+        _extract_date_from_observation_path)
+
+    # Load labels.
+    labels = pd.read_csv(
+        os.path.join(data_dir, 'tc.csv'),
+        dtype={
+            'Observation': str,
+            'TC': int,
+            'Genesis': str,
+            'End': str,
+            'Latitude': str,
+            'Longitude': str,
+        })
+
+    # Merge observations and labels into single dataframe,
+    # and return the result.
+    return pd.merge(
+        observations,
+        labels,
+        how='inner',
+        left_on='Date',
+        right_on='Observation')
+
+
+def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
+    data = []
+    for var in dataset.data_vars:
+        if subset is not None and var in subset:
+            values = dataset[var].sel(lev=subset[var]).values
+        else:
+            values = dataset[var].values
+
+        # For 2D dataarray, make it 3D.
+        if len(np.shape(values)) != 3:
+            values = np.expand_dims(values, 0)
+
+        data.append(values)
+
+    # Reshape data so that it have channel_last format.
+    data = np.concatenate(data, axis=0)
+    data = np.moveaxis(data, 0, -1)
+
+    return data
+
+
 def load_data(
         data_dir,
         data_shape,
@@ -35,48 +91,80 @@ def load_data(
     :param subset: allow selecting only a portion of data.
     :returns:
     """
-    # Get a list of all observation data files.
-    observations = glob.glob(os.path.join(data_dir, '*.nc'))
-    observations = pd.DataFrame(observations, columns=['Path'])
-    observations['Date'] = observations['Path'].apply(
-        _extract_date_from_observation_path)
-
-    # Load labels.
-    labels = pd.read_csv(
-        os.path.join(data_dir, 'tc.csv'),
-        dtype={
-            'Observation': str,
-            'TC': int,
-            'Genesis': str,
-            'End': str,
-            'Latitude': np.float32,
-            'Longitude': np.float32,
-        }, na_values={
-            'Latitude': 0,
-            'Longitude': 0,
-        })
-
     # Merge observations and labels into single dataframe.
-    dataset = pd.merge(
-        observations,
-        labels,
-        how='inner',
-        left_on='Date',
-        right_on='Observation')
+    dataset = load_tc_with_observation_path(data_dir)
     dataset = _filter_negative_samples(dataset, negative_samples_ratio)
 
+    if include_tc_position:
+        raise ValueError('Under construction!')
     # FIX: Due to my mistake, the latitude sign is negative, but it should be positive
-    dataset['Latitude'] = -dataset['Latitude'].fillna(0)
-    dataset['Longitude'] = dataset['Longitude'].fillna(0)
+    # dataset['Latitude'] = -dataset['Latitude'].fillna(0)
+    # dataset['Longitude'] = dataset['Longitude'].fillna(0)
 
     dataset = tf.data.Dataset.from_tensor_slices(
         (dataset['Path'], dataset[['TC', 'Latitude', 'Longitude']] if include_tc_position else dataset['TC']))
     if shuffle:
-        dataset = dataset.shuffle(len(observations))
+        dataset = dataset.shuffle(len(dataset))
 
     # Load given dataset to memory.
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
-        lambda x, y: _load_observation_data(
+        lambda x, y: load_observation_data(
+            x, y,
+            include_tc_position,
+            subset=subset),
+        inp=[path, tc],
+        Tout=([tf.float32, tf.float64]
+              if include_tc_position
+              else [tf.float32, tf.int64]),
+        name='load_observation_data'),
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=False,
+    )
+
+    # Tensorflow should figure out the shape of the output of previous map,
+    # but it doesn't, so we have to do it our self.
+    # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+    dataset = dataset.map(lambda observation, tc: _set_shape(observation,
+                                                             tc,
+                                                             data_shape,
+                                                             include_tc_position))
+
+    # Cache the dataset for better performance.
+    dataset = dataset.cache()
+
+    # Batch the dataset.
+    dataset = dataset.batch(batch_size)
+
+    # Always prefetch the data for better performance.
+    return dataset.prefetch(prefetch_batch)
+
+def load_data_v1(
+        labels_path,
+        data_shape,
+        batch_size=32,
+        shuffle=False,
+        negative_samples_ratio=None,
+        prefetch_batch=1,
+        include_tc_position=False,
+        subset=None):
+    # Read labels from path.
+    labels = pd.read_csv(labels_path)
+
+    if negative_samples_ratio is not None:
+        raise ValueError('Negative samples ratio is not implemented!')
+
+    if include_tc_position:
+        raise ValueError('Under Construction!')
+
+    dataset = tf.data.Dataset.from_tensor_slices(
+            (labels['Path'], np.where(labels['TC'], 1, 0)))
+    
+    if shuffle:
+        dataset = dataset.shuffle(len(dataset))
+
+    # Load given dataset to memory.
+    dataset = dataset.map(lambda path, tc: tf.numpy_function(
+        lambda x, y: load_observation_data(
             x, y,
             include_tc_position,
             subset=subset),
@@ -107,28 +195,19 @@ def load_data(
     return dataset.prefetch(prefetch_batch)
 
 
-def _load_observation_data(observation_path, label, include_tc_position, subset=None):
+def load_observation_data(observation_path, label, include_tc_position, subset=None):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
                               engine='netcdf4')
 
-    data = []
-    for var in dataset.data_vars:
-        if subset is not None and var in subset:
-            values = dataset[var].sel(lev=subset[var]).values
-        else:
-            values = dataset[var].values
-
-        # For 2D dataarray, make it 3D.
-        if len(np.shape(values)) != 3:
-            values = np.expand_dims(values, 0)
-
-        data.append(values)
-
-    # Reshape data so that it have channel_last format.
-    data = np.concatenate(data, axis=0)
-    data = np.moveaxis(data, 0, -1)
-
+    data = extract_variables_from_dataset(dataset, subset)
     return data, label if include_tc_position else [label]
+
+
+def load_observation_data_with_tc_probability(observation_path, labels, subset=None):
+    dataset = xr.open_dataset(observation_path.decode('utf-8'),
+                              engine='netcdf4')
+
+    pass
 
 
 def _set_shape(observation, label, data_shape, include_tc_position):
