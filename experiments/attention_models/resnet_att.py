@@ -132,10 +132,13 @@ first_stage_history = model.fit(
             patience=20,
             restore_best_weights=True),
         keras.callbacks.ModelCheckpoint(
-            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",
+            filepath=f'outputs/{exp_name}_{runtime}_1st_ckp',
             monitor='val_f1_score',
             mode='max',
             save_best_only=True,
+        ),
+        keras.callbacks.TensorBoard(
+            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
     ]
 )

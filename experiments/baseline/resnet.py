@@ -36,11 +36,13 @@ from datetime import datetime
 exp_name = 'baseline_resnet'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/new_multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-train_path = f'{data_path}_train'
-val_path = f'{data_path}_val'
-test_path = f'{data_path}_test'
+#data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
+# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_only_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
+train_path = data_path.replace('.csv', '_train.csv')
+val_path = data_path.replace('.csv', '_val.csv')
+test_path = data_path.replace('.csv', '_test.csv')
 subset = dict(
     absvprs=[900, 750],
     rhprs=[750],
@@ -50,9 +52,9 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 181, 13)
+data_shape = (41, 81, 13)
 
-model = resnet.ResNet50(
+model = resnet.ResNet18(
     input_shape=data_shape,
     include_top=True,
     classes=1,
@@ -75,21 +77,21 @@ model.compile(
 
 # Load our training and validation data.
 
-full_training = data.load_data(
+full_training = data.load_data_v1(
     train_path,
     data_shape=data_shape,
     batch_size=64,
     shuffle=True,
     subset=subset,
 )
-downsampled_training = data.load_data(
-    train_path,
-    data_shape=data_shape,
-    batch_size=64,
-    shuffle=True,
-    subset=subset,
-    negative_samples_ratio=1)
-validation = data.load_data(val_path, data_shape=data_shape, subset=subset)
+# downsampled_training = data.load_data(
+#     train_path,
+#     data_shape=data_shape,
+#     batch_size=64,
+#     shuffle=True,
+#     subset=subset,
+#     negative_samples_ratio=1)
+validation = data.load_data_v1(val_path, data_shape=data_shape, subset=subset)
 
 normalizer = preprocessing.Normalization(axis=-1)
 for X, y in iter(full_training):
@@ -103,7 +105,7 @@ def normalize_data(x, y):
 
 
 full_training = full_training.map(normalize_data)
-downsampled_training = downsampled_training.map(normalize_data)
+# downsampled_training = downsampled_training.map(normalize_data)
 validation = validation.map(normalize_data)
 # -
 
@@ -133,15 +135,24 @@ first_stage_history = model.fit(
             mode='max',
             save_best_only=True,
         ),
+        keras.callbacks.TensorBoard(
+            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
+        ),
     ]
 )
 
 plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
-testing = data.load_data(test_path, data_shape=data_shape, subset=subset)
+testing = data.load_data_v1(test_path, data_shape=data_shape, subset=subset)
 testing = testing.map(normalize_data)
-model.evaluate(testing)
+model.evaluate(
+    testing,
+    callbacks=[
+        keras.callbacks.TensorBoard(
+            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
+        ),
+    ])
 
 # # Second stage
 #
