@@ -204,11 +204,11 @@ OUTPUT_DIR=$(readlink -f $OUTPUT_DIR)
 pushd "${TMP_DIR}"
 
 # Loop through all observation data to extract those values.
-N=4
+N_PROCESSES=${N_PROCESSES-4}
 for data_file in "${ABS_REANALYSIS_FILES[@]}"; do
     month=$(basename "$data_file" | cut -b 9-10)
 
-    ((i=i%N)); ((i++==0)) && wait
+    ((i=i%N_PROCESSES)); ((i++==0)) && wait
 
     if [[ $month > "04" ]] && [[ $month < "12" ]]; then
         generate_netcdf "${data_file}" "${OUTPUT_DIR}" &
