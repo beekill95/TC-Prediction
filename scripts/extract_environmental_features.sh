@@ -200,9 +200,9 @@ for bdeck_file in "${BDECK_FILES[@]}"; do
     tc_observation_time=$(date --date="${tc_year}${tc_month}${tc_day} ${tc_hour} -${LEAD_TIME} hour" +"%Y%m%d %H" | sed -e 's/ //g')
 
     tc_lat=$(echo $first_line | awk -F, '{print $7}')
-    tc_lat="$(convert_to_grads_lat $tc_lat)"
+    # tc_lat="$(convert_to_grads_lat $tc_lat)"
     tc_long=$(echo $first_line | awk -F, '{print $8}')
-    tc_long="$(convert_to_grads_long $tc_long)"
+    # tc_long="$(convert_to_grads_long $tc_long)"
 
     TC_LEAD_TIME+=($tc_observation_time)
     TC_GENESIS_TIME+=($tc_genesis_time)

@@ -204,8 +204,15 @@ OUTPUT_DIR=$(readlink -f $OUTPUT_DIR)
 pushd "${TMP_DIR}"
 
 # Loop through all observation data to extract those values.
+N=4
 for data_file in "${ABS_REANALYSIS_FILES[@]}"; do
-    generate_netcdf "${data_file}" "${OUTPUT_DIR}"
+    month=$(basename "$data_file" | cut -b 9-10)
+
+    ((i=i%N)); ((i++==0)) && wait
+
+    if [[ $month > "04" ]] && [[ $month < "12" ]]; then
+        generate_netcdf "${data_file}" "${OUTPUT_DIR}" &
+    fi
 done
 
 # After finish everything, return back to the original directory to do further stuffs.
