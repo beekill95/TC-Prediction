@@ -5,11 +5,17 @@ import pandas as pd
 from pathlib import Path
 import tensorflow as tf
 import xarray as xr
+from typing import Union, List
+from datetime import timedelta
+from functools import reduce
 
 
 def _extract_date_from_observation_path(path):
     filename = Path(path).stem
     return ''.join(filename.split('_')[1:-1])
+
+def parse_tc_datetime(column: pd.Series):
+    return pd.to_datetime(column, format='%Y-%m-%d %H:%M:%S')
 
 
 def load_tc_with_observation_path(data_dir):
@@ -66,6 +72,49 @@ def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
     data = np.moveaxis(data, 0, -1)
 
     return data
+
+def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None):
+    if leadtimes is None:
+        return tc
+
+    if not isinstance(leadtimes, list):
+        leadtimes = [leadtimes]
+
+    # First, we will keep all negative cases.
+    mask = ~tc['TC']
+
+    # Then, loop through each lead time to get observations that belong to that leadtime.
+    observation_dates = parse_tc_datetime(tc['Observation'])
+    tc_first_observed_dates = parse_tc_datetime(tc['First Observed'])
+    for leadtime in leadtimes:
+        leadtime = timedelta(hours=leadtime)
+        mask |= (tc_first_observed_dates - observation_dates) == leadtime
+
+    return tc[mask]
+
+def group_observations_by_date(tc_labels: pd.DataFrame):
+    def concat_values(values):
+        return reduce(lambda agg, x: agg + [x], values, [])
+
+    grouped = tc_labels.groupby('Date')
+
+    tc_labels['TC'] = grouped['TC'].transform(
+            lambda has_tc: reduce(lambda agg, x: agg and x, has_tc, True))
+
+    concate_columns = [
+            'TC Id',
+            'First Observed',
+            'Last Observed',
+            'Latitude',
+            'Longitude',
+            'First Observed Type',
+            'Will Develop to TC',
+            'Developing Date',
+        ]
+    for col in concate_columns:
+        tc_labels[col] = grouped[col].transform(concat_values)
+
+    return tc_labels.drop_duplicates('Date', keep='first')
 
 
 def load_data(
@@ -146,9 +195,24 @@ def load_data_v1(
         negative_samples_ratio=None,
         prefetch_batch=1,
         include_tc_position=False,
-        subset=None):
+        subset=None,
+        leadtime: Union[List[int], int] = None,
+        group_same_observations=False):
     # Read labels from path.
     labels = pd.read_csv(labels_path)
+    
+    # Filter in lead time.
+    labels = filter_in_leadtime(labels, leadtime)
+
+    # Group same observations.
+    # TODO: implement this feature,
+    # then rerun all the experiment I did today (Nov 16th, 2021)
+    # with val, and test set having group_same_observations=True
+    if group_same_observations:
+        nb_rows = len(labels)
+        labels = group_observations_by_date(labels)
+        print(f'Grouping same observations reduces number of rows from {nb_rows} to {len(labels)}.')
+        print(labels.head())
 
     if negative_samples_ratio is not None:
         raise ValueError('Negative samples ratio is not implemented!')
@@ -206,7 +270,6 @@ def load_observation_data(observation_path, label, include_tc_position, subset=N
 def load_observation_data_with_tc_probability(observation_path, labels, subset=None):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
                               engine='netcdf4')
-
     pass
 
 
