@@ -84,7 +84,7 @@ def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None
     mask = ~tc['TC']
 
     # Then, loop through each lead time to get observations that belong to that leadtime.
-    observation_dates = parse_tc_datetime(tc['Observation'])
+    observation_dates = parse_tc_datetime(tc['Date'])
     tc_first_observed_dates = parse_tc_datetime(tc['First Observed'])
     for leadtime in leadtimes:
         leadtime = timedelta(hours=leadtime)
@@ -212,7 +212,6 @@ def load_data_v1(
         nb_rows = len(labels)
         labels = group_observations_by_date(labels)
         print(f'Grouping same observations reduces number of rows from {nb_rows} to {len(labels)}.')
-        print(labels.head())
 
     if negative_samples_ratio is not None:
         raise ValueError('Negative samples ratio is not implemented!')
