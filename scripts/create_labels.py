@@ -146,10 +146,10 @@ def load_best_track(best_track_path) -> pd.DataFrame:
 
     return df
 
-def is_tc_in_domain(best_track: pd.DataFrame, latitude: Tuple[int, int], longitude: Tuple[int, int]):
-    first_row = best_track.iloc[0]
-    return (latitude[0] <= first_row['LatN/S'] <= latitude[1]
-            and longitude[0] <= first_row['LonE/W'] <= longitude[1])
+def filter_tc_in_domain(best_track: pd.DataFrame, latitude: Tuple[int, int], longitude: Tuple[int, int]):
+    in_latitude = (best_track['Latitude'] >= latitude[0]) & (best_track['Latitude'] <= latitude[1])
+    in_longitude = (best_track['Longitude'] >= longitude[0]) & (best_track['Longitude'] <= longitude[1])
+    return best_track[in_latitude & in_longitude]
 
 
 # TODO: right now, I will just use the first row of the best track,
@@ -182,16 +182,30 @@ def extract_tropical_cyclones_from_ibtracs_best_track(
         latitude: Tuple[int, int],
         longitude: Tuple[int, int],
         basins: List[str]):
+    def convert_latitude(latitude):
+        # FIXME:
+        # Right now, just leave it as is.
+        # As we are currently dealing with Pacific Ocean only.
+        return latitude
+
+    def convert_longitude(longitude):
+        # East will be positive from 0 to 180E
+        # West will be negative from 0 to -180W
+        # All these will be converted to 0 to 360,
+        # with 0 - 180 belongs to East, and 180 to 360 belongs to West
+        return longitude if longitude > 0 else 360 + longitude
+
     def extract_tc_information(df):
         tc_period = df[df['NATURE'].isin(['TC', 'TS'])]
 
         first_row = df.iloc[0]
         last_row = df.iloc[-1]
+    
 
         return {
             'Id': first_row['SID'],
-            'Latitude': first_row['LAT'],
-            'Longitude': first_row['LON'],
+            'Latitude': convert_latitude(first_row['LAT']),
+            'Longitude': convert_longitude(first_row['LON']),
             'First Observed': first_row['ISO_TIME'],
             'Last Observed': last_row['ISO_TIME'],
             'First Observed Type': first_row['NATURE'],
@@ -294,6 +308,9 @@ if __name__ == '__main__':
     else:
         tc_df = extract_tropical_cyclones_from_ibtracs_best_track(
             args.best_track, latitude, longitude, args.basins)
+
+    # After that, filter out all tropical cyclones that are not in our domain of interest.
+    tc_df = filter_tc_in_domain(tc_df, latitude, longitude)
 
     # Then, base on lead time to create labels for each observation date.
     tc_df.sort_values(by='First Observed', inplace=True, ignore_index=True)
