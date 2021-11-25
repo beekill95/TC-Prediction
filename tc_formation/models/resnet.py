@@ -146,6 +146,43 @@ def _block0(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
     return x
 
 
+def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
+    """A residual block v2 for resnet 18 and resnet 34
+
+    Args:
+      x: input tensor.
+      filters: integer, filters of the bottleneck layer.
+      kernel_size: default 3, kernel size of the bottleneck layer.
+      stride: default 1, stride of the first layer.
+      conv_shortcut: default True, use convolution shortcut if True,
+          otherwise identity shortcut.
+      name: string, block label.
+    Returns:
+      Output tensor for the residual block.
+    """
+    bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
+
+    preact = layers.BatchNormalization(
+            axis=bn_axis, epsilon=1.001e-5, name=name + '_preact_bn')(x)
+    preact = layers.Activation('relu', name=name + '_preact_relu')(preact)
+
+    if conv_shortcut:
+        shortcut = layers.Conv2D(
+                filters, 1, strides=stride, name=name + '_0_conv')(preact)
+    else:
+        shortcut = layers.MaxPooling2D(1, strides=stride)(x) if stride > 1 else x
+
+    x = layers.Conv2D(
+        filters, kernel_size, padding='SAME', name=name + '_1_conv')(preact)
+    x = layers.BatchNormalization(
+        axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
+    x = layers.Activation('relu', name=name + '_1_relu')(x)
+
+    x = layers.Add(name=name + '_add')([shortcut, x])
+    x = layers.Activation('relu', name=name + '_out')(x)
+    return x
+
+
 def _stack0(x, filters, blocks, stride1=1, name=None):
     """A set of stacked residual blocks.
 
@@ -161,6 +198,24 @@ def _stack0(x, filters, blocks, stride1=1, name=None):
     x = _block0(x, filters, stride=stride1, name=name + '_block1')
     for i in range(2, blocks + 1):
         x = _block0(x, filters, conv_shortcut=False,
+                    name=name + '_block' + str(i))
+    return x
+
+def _stack0v2(x, filters, blocks, stride1=1, name=None):
+    """A set of stacked residual blocks.
+
+    Args:
+      x: input tensor.
+      filters: integer, filters of the bottleneck layer in a block.
+      blocks: integer, blocks in the stacked blocks.
+      stride1: default 2, stride of the first layer in the first block.
+      name: string, stack label.
+    Returns:
+      Output tensor for the stacked blocks.
+    """
+    x = _block0v2(x, filters, stride=stride1, name=name + '_block1')
+    for i in range(2, blocks + 1):
+        x = _block0v2(x, filters, conv_shortcut=False,
                     name=name + '_block' + str(i))
     return x
 
@@ -241,6 +296,25 @@ def ResNet18(include_top=True,
         x = _stack0(x, 128, 2, name='conv3')
         x = _stack0(x, 256, 2, name='conv4')
         return _stack0(x, 512, 2, name='conv5')
+
+    return _ResNet(stack_fn, False, True, 'resnet18', include_top,
+                   input_tensor, input_shape, pooling, classes, **kwargs)
+
+def ResNet18v2(include_top=True,
+             input_tensor=None,
+             input_shape=None,
+             pooling=None,
+             classes=1000,
+             **kwargs):
+    """
+    Instantiates the ResNet18 architecture.
+    """
+
+    def stack_fn(x):
+        x = _stack0v2(x, 64, 2, stride1=1, name='conv2')
+        x = _stack0v2(x, 128, 2, name='conv3')
+        x = _stack0v2(x, 256, 2, name='conv4')
+        return _stack0v2(x, 512, 2, name='conv5')
 
     return _ResNet(stack_fn, False, True, 'resnet18', include_top,
                    input_tensor, input_shape, pooling, classes, **kwargs)
