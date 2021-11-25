@@ -1,13 +1,14 @@
+from datetime import timedelta
+from functools import reduce, partial
 import glob
 import numpy as np
 import os
 import pandas as pd
 from pathlib import Path
+from tc_formation.data import utils
 import tensorflow as tf
-import xarray as xr
 from typing import Union, List
-from datetime import timedelta
-from functools import reduce
+import xarray as xr
 
 
 def _extract_date_from_observation_path(path):
@@ -219,18 +220,14 @@ def load_data_v1(
     if include_tc_position:
         raise ValueError('Under Construction!')
 
-    dataset = tf.data.Dataset.from_tensor_slices(
-            (labels['Path'], np.where(labels['TC'], 1, 0)))
+    dataset = tf.data.Dataset.from_tensor_slices((labels['Path'], np.where(labels['TC'], 1, 0)))
     
     if shuffle:
         dataset = dataset.shuffle(len(dataset))
 
     # Load given dataset to memory.
     dataset = dataset.map(lambda path, tc: tf.numpy_function(
-        lambda x, y: load_observation_data(
-            x, y,
-            include_tc_position,
-            subset=subset),
+        partial(load_observation_data_v1, subset=subset),
         inp=[path, tc],
         Tout=([tf.float32, tf.float64]
               if include_tc_position
@@ -257,6 +254,60 @@ def load_data_v1(
     # Always prefetch the data for better performance.
     return dataset.prefetch(prefetch_batch)
 
+def load_data_with_tc_probability(
+        labels_path,
+        data_shape,
+        batch_size=32,
+        shuffle=False,
+        prefetch_batch=1,
+        subset=None,
+        leadtime: Union[List[int], int] = None):
+    # Read labels from path.
+    labels = pd.read_csv(labels_path, dtype={
+        'TC Id': str,
+        'First Observed': str,
+        'Last Observed': str,
+        'First Observed Type': str,
+        'Will Develop to TC': str,
+        'Developing Date': str,
+    })
+    print(labels['Developing Date'].dtype)
+
+    # Filter in lead time.
+    labels = filter_in_leadtime(labels, leadtime)
+    labels = group_observations_by_date(labels)
+
+    # dataset = tf.data.Dataset.from_tensor_slices( (labels['Path'], np.where(labels['TC'], 1, 0)))
+    dataset = tf.data.Dataset.from_tensor_slices(dict(labels[['Path', 'TC', 'Latitude', 'Longitude']]))
+    
+    if shuffle:
+        dataset = dataset.shuffle(len(dataset))
+
+    # Load given dataset to memory.
+    # dataset = dataset.map(partial(load_observation_data_with_tc_probability, subset=subset))
+    dataset = dataset.map(lambda row: utils.new_py_function(
+        partial(load_observation_data_with_tc_probability, subset=subset),
+        inp=[row],
+        Tout=[tf.float32, tf.float32],
+        name='load_observation_data'),
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=False,
+    )
+
+    # Tensorflow should figure out the shape of the output of previous map,
+    # but it doesn't, so we have to do it our self.
+    # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+    dataset = dataset.map(partial(_set_shape_tc_probability, data_shape=data_shape))
+
+    # Cache the dataset for better performance.
+    dataset = dataset.cache()
+
+    # Batch the dataset.
+    dataset = dataset.batch(batch_size)
+
+    # Always prefetch the data for better performance.
+    return dataset.prefetch(prefetch_batch)
+
 
 def load_observation_data(observation_path, label, include_tc_position, subset=None):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
@@ -265,17 +316,49 @@ def load_observation_data(observation_path, label, include_tc_position, subset=N
     data = extract_variables_from_dataset(dataset, subset)
     return data, label if include_tc_position else [label]
 
+def load_observation_data_v1(path, tc, subset=None):
+    dataset = xr.open_dataset(path.decode('utf-8'), engine='netcdf4')
+    data = extract_variables_from_dataset(dataset, subset)
+    return data, [tc]
 
-def load_observation_data_with_tc_probability(observation_path, labels, subset=None):
-    dataset = xr.open_dataset(observation_path.decode('utf-8'),
-                              engine='netcdf4')
-    pass
+
+def load_observation_data_with_tc_probability(row, tc_avg_radius_lat_deg=2, clip_threshold=0.1, subset=None):
+    path = row['Path'].numpy().decode('utf-8')
+    dataset = xr.open_dataset(path, engine='netcdf4')
+    data = extract_variables_from_dataset(dataset, subset)
+    
+    groundtruth = np.zeros(data.shape[:-1])
+
+    latitudes = dataset['lat']
+    longitudes = dataset['lon']
+    x, y = np.meshgrid(longitudes, latitudes)
+    if row['TC']:
+        lats = row['Latitude'].numpy()
+        lons = row['Longitude'].numpy()
+        lats = [lats] if isinstance(lats, float) else lats
+        lons = [lons] if isinstance(lons, float) else lons
+        for lat, lon in zip(lats, lons):
+            x_diff = x - lon
+            y_diff = y - lat
+
+            # RBF kernel.
+            prob = np.exp(-(x_diff * x_diff + y_diff * y_diff)/(2 * tc_avg_radius_lat_deg ** 2))
+            # prob = np.exp(-(x_diff * x_diff + y_diff * y_diff) / tc_avg_radius_lat_deg)
+            prob[prob < clip_threshold] = 0
+            groundtruth += prob
+
+    return data, groundtruth[:, :, None]
 
 
 def _set_shape(observation, label, data_shape, include_tc_position):
     observation.set_shape(data_shape)
     label.set_shape([3] if include_tc_position else [1])
     return observation, label
+
+def _set_shape_tc_probability(observation, prob, data_shape):
+    observation.set_shape(data_shape)
+    prob.set_shape(data_shape[:2] + (1,))
+    return observation, prob
 
 
 def _filter_negative_samples(dataset, negative_samples_ratio):

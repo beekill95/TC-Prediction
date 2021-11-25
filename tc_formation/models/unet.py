@@ -7,7 +7,10 @@ def Unet(input_shape=None, input_tensor=None, classifier_activation='softmax', m
     if input_tensor is None:
         input_img = layers.Input(shape=input_shape)
     else:
-        input_img = input_tensor
+        if not keras.backend.is_keras_tensor(input_tensor):
+            input_img = layers.Input(tensor=input_tensor, shape=input_shape)
+        else:
+            input_img = input_tensor
 
     # Encoder part.
     encoder_blocks = []
@@ -41,7 +44,14 @@ def Unet(input_shape=None, input_tensor=None, classifier_activation='softmax', m
                 classifier_activation,
                 name='activation_out')(x)
 
-    model = keras.Model(inputs=input_img, outputs=x, name=model_name)
+    # Ensure that the model takes into account
+    # any potential predecessors of `input_tensor`.
+    if input_tensor is not None:
+        inputs = keras.utils.get_source_inputs(input_tensor)
+    else:
+        inputs = input_img
+
+    model = keras.Model(inputs, outputs=x, name=model_name)
     return model
 
 
