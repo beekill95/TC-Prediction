@@ -19,9 +19,12 @@ from datetime import datetime
 from tc_formation.models import unet
 from tc_formation import tf_metrics as tfm
 from tc_formation.data import data
+from tc_formation.losses.hard_negative_mining import hard_negative_mining
+import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
+import xarray as xr
 
 # # Predict TC Formation using Grid Probability
 
@@ -29,7 +32,7 @@ import tensorflow_addons as tfa
 
 exp_name = 'tc_grid_prob_unet'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -42,48 +45,82 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 161, 13)
+subset = dict(
+    absvprs=[900, 800, 750, 500, 200],
+    rhprs=[900, 800, 750, 500, 200],
+    tmpprs=[900, 800, 750, 500, 200],
+    hgtprs=[900, 800, 750, 500, 200],
+    vvelprs=[900, 800, 750, 500, 200],
+    ugrdprs=[900, 800, 750, 500, 200],
+    vgrdprs=[900, 800, 750, 500, 200],
+)
+#subset = None
+data_shape = (41, 161, 37)
 
 # Create U-Net model with normalization layer.
 
 input_layer = keras.Input(data_shape)
 normalization_layer = preprocessing.Normalization()
-model = unet.Unet(input_tensor=normalization_layer(input_layer), model_name='unet')
+model = unet.Unet(
+    input_tensor=normalization_layer(input_layer),
+    model_name='unet',
+    classifier_activation='sigmoid',
+    decoder_shortcut_mode='add',
+    filters_block=[64, 128])
 model.summary()
 
 # Then, we load the training and validation dataset.
 
-# +
-import tensorflow as tf
-
+tc_avg_radius_lat_deg = 3
 training = data.load_data_with_tc_probability(
     train_path,
     data_shape,
     batch_size=64,
     shuffle=True,
+    tc_avg_radius_lat_deg=tc_avg_radius_lat_deg,
     subset=subset)
-validation = data.load_data_with_tc_probability(val_path, data_shape, subset=subset)
-
-it = iter(training)
-for i in range(2):
-    _, prob = next(it)
-    print(prob)
-# -
+validation = data.load_data_with_tc_probability(
+    val_path,
+    data_shape,
+    tc_avg_radius_lat_deg=tc_avg_radius_lat_deg,
+    subset=subset)
 
 # After that, we will initialize the normalization layer,
 # and compile the model.
 
-# +
 features = training.map(lambda feature, _: feature)
 normalization_layer.adapt(features)
+
+
+# +
+@hard_negative_mining
+def hard_negative_mined_sigmoid_focal_loss(y_true, y_pred):
+    fl = tfa.losses.SigmoidFocalCrossEntropy()
+    return fl(y_true, y_pred)
+
+@hard_negative_mining
+def hard_negative_mined_binary_crossentropy_loss(y_true, y_pred):
+    l = tf.keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
+    return l(y_true, y_pred)
+
+def dice_loss(y_true, y_pred):
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.math.sigmoid(y_pred)
+    numerator = 2 * tf.reduce_sum(y_true * y_pred)
+    denominator = tf.reduce_sum(y_true + y_pred)
+
+    return 1 - numerator / denominator
 
 model.compile(
     optimizer='adam',
     # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+    loss=hard_negative_mined_sigmoid_focal_loss,
     metrics=[
         'binary_accuracy',
-        #tfm.RecallScore(from_logits=True),
+        keras.metrics.Recall(),
+        keras.metrics.Precision(),
+        tfm.CustomF1Score(),
+        #tfa.metrics.F1Score(num_classes=1, threshold=0.5),
         #tfm.PrecisionScore(from_logits=True),
         #tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
     ])
@@ -96,4 +133,98 @@ model.fit(
     training,
     epochs=epochs,
     validation_data=validation,
-    shuffle=True)
+    shuffle=True,
+    callbacks=[
+        keras.callbacks.TensorBoard(
+            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
+        ),
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=20,
+            restore_best_weights=True
+        ),
+    ]
+)
+
+for leadtime in [6, 12, 18, 24, 30, 36, 42, 48]:
+    testing = data.load_data_with_tc_probability(
+        test_path,
+        data_shape=data_shape,
+        tc_avg_radius_lat_deg=tc_avg_radius_lat_deg,
+        subset=subset,
+        leadtime=leadtime,
+    )
+    print(f'\n**** LEAD TIME: {leadtime}')
+    model.evaluate(testing)
+
+# # Some Predictions
+
+# +
+import matplotlib.pyplot as plt # noqa
+from mpl_toolkits.basemap import Basemap # noqa
+import numpy as np # noqa
+import pandas as pd # noqa
+from tc_formation.data.data import load_observation_data_with_tc_probability # noqa
+from tc_formation.plots import decorators, observations as plt_obs # noqa
+
+@decorators._with_axes
+@decorators._with_basemap
+def plot_tc_occurence_prob(
+        dataset: xr.Dataset,
+        prob: np.ndarray,
+        basemap: Basemap = None,
+        *args, **kwargs):
+    lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
+    cs = basemap.contourf(lats, longs, prob, cmap='OrRd', levels=np.arange(0, 1.01, 0.05))
+    basemap.colorbar(cs, "right", size="5%", pad="2%")
+
+def plot_groundtruth_and_prediction(tc_df):
+    for _, row in tc_df.iterrows():
+        dataset = xr.open_dataset(row['Path'])
+        inp = {
+            'Path': tf.constant(row['Path']),
+            'TC': tf.constant(1 if row['TC'] else 0),
+            'Latitude': tf.constant(row['Latitude'], dtype=float),
+            'Longitude': tf.constant(row['Longitude'], dtype=float)
+        }
+        data, groundtruth = load_observation_data_with_tc_probability(
+            inp,
+            tc_avg_radius_lat_deg=tc_avg_radius_lat_deg,
+            subset=subset)
+
+        prediction = model.predict(np.asarray([data]))[0]
+        
+        fig, ax = plt.subplots(nrows=2, figsize=(30, 18))
+        plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(groundtruth), ax=ax[0])
+        plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[0])
+        ax[0].set_title('Groundtruth')
+
+        plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(prediction), ax=ax[1])
+        plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[1])
+        ax[1].set_title('Prediction')
+        
+        if row['TC']:
+            title = f"""Prediction on date {row['Date']}
+                        for tropical cyclone appearing on {row['First Observed']}"""
+        else:
+            title = f"Prediction on date {row['Date']}"
+        fig.suptitle(title)
+        fig.tight_layout()
+        display(fig)
+        plt.close(fig)
+        
+        print("=====\n=====\n====\n")
+# -
+
+# ## With TC
+
+test_df = pd.read_csv(test_path)
+test_with_tc_df = test_df[test_df['TC']].sample(5)
+plot_groundtruth_and_prediction(test_with_tc_df)
+
+# ## Without TC
+
+test_without_tc_df = test_df[~test_df['TC']].sample(5)
+plot_groundtruth_and_prediction(test_without_tc_df)

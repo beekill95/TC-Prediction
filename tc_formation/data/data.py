@@ -261,6 +261,7 @@ def load_data_with_tc_probability(
         shuffle=False,
         prefetch_batch=1,
         subset=None,
+        tc_avg_radius_lat_deg=2,
         leadtime: Union[List[int], int] = None):
     # Read labels from path.
     labels = pd.read_csv(labels_path, dtype={
@@ -271,7 +272,6 @@ def load_data_with_tc_probability(
         'Will Develop to TC': str,
         'Developing Date': str,
     })
-    print(labels['Developing Date'].dtype)
 
     # Filter in lead time.
     labels = filter_in_leadtime(labels, leadtime)
@@ -284,9 +284,8 @@ def load_data_with_tc_probability(
         dataset = dataset.shuffle(len(dataset))
 
     # Load given dataset to memory.
-    # dataset = dataset.map(partial(load_observation_data_with_tc_probability, subset=subset))
     dataset = dataset.map(lambda row: utils.new_py_function(
-        partial(load_observation_data_with_tc_probability, subset=subset),
+        partial(load_observation_data_with_tc_probability, subset=subset, tc_avg_radius_lat_deg=tc_avg_radius_lat_deg),
         inp=[row],
         Tout=[tf.float32, tf.float32],
         name='load_observation_data'),
@@ -335,8 +334,8 @@ def load_observation_data_with_tc_probability(row, tc_avg_radius_lat_deg=2, clip
     if row['TC']:
         lats = row['Latitude'].numpy()
         lons = row['Longitude'].numpy()
-        lats = [lats] if isinstance(lats, float) else lats
-        lons = [lons] if isinstance(lons, float) else lons
+        lats = lats if isinstance(lats, list) else [lats]
+        lons = lons if isinstance(lons, list) else [lons]
         for lat, lon in zip(lats, lons):
             x_diff = x - lon
             y_diff = y - lat
@@ -347,7 +346,10 @@ def load_observation_data_with_tc_probability(row, tc_avg_radius_lat_deg=2, clip
             prob[prob < clip_threshold] = 0
             groundtruth += prob
 
-    return data, groundtruth[:, :, None]
+    groundtruth = groundtruth[:, :, None]
+    groundtruth = np.where(groundtruth > 0, 1, 0)
+
+    return data, groundtruth
 
 
 def _set_shape(observation, label, data_shape, include_tc_position):

@@ -1,7 +1,13 @@
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
 
-def Unet(input_shape=None, input_tensor=None, classifier_activation='softmax', model_name=None, ):
+def Unet(
+        input_shape=None,
+        input_tensor=None,
+        filters_block=[64, 128, 256, 512, 1024],
+        classifier_activation='sigmoid',
+        decoder_shortcut_mode='add', # 2 possible modes: 'concat' and 'add'
+        model_name=None):
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
     if input_tensor is None:
@@ -15,7 +21,7 @@ def Unet(input_shape=None, input_tensor=None, classifier_activation='softmax', m
     # Encoder part.
     encoder_blocks = []
     x = input_img
-    for i, filters in enumerate([64, 128, 256, 512, 1024]):
+    for i, filters in enumerate(filters_block):
         x = encoder_block(
                 x,
                 filters,
@@ -25,16 +31,17 @@ def Unet(input_shape=None, input_tensor=None, classifier_activation='softmax', m
         encoder_blocks.append(x)
 
     # Decoder part.
-    for i, (encoder_output, filters) in enumerate(zip(encoder_blocks[:-1][::-1], [512, 256, 128, 64])):
+    for i, (encoder_output, filters) in enumerate(zip(encoder_blocks[:-1][::-1], filters_block[:-1][::-1])):
         x = decoder_block(
                 x,
                 encoder_output,
                 filters,
+                decoder_shortcut_mode=decoder_shortcut_mode,
                 has_shortcut=False, # Shortcut right now is broken!
                 name=f'decoder_blk_{i}')
 
     # The output part.
-    x = layers.Conv2D(1, 1, padding='SAME', name='out_conv')(x)
+    x = layers.Conv2D(1, 5, padding='SAME', name='out_conv')(x)
     x = layers.BatchNormalization(
             axis=bn_axis,
             epsilon=1.001e-5,
@@ -94,7 +101,7 @@ def encoder_block(x, filters, kernel_size=3, pooling=True, has_shortcut=True, na
 
     return x
 
-def decoder_block(x, encoder_output, filters, kernel_size=3, has_shortcut=True, upsampling=True, name=None):
+def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mode='add', has_shortcut=True, upsampling=True, name=None):
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
     if upsampling:
@@ -106,7 +113,11 @@ def decoder_block(x, encoder_output, filters, kernel_size=3, has_shortcut=True, 
             x = layers.ZeroPadding2D(((0, 1), (0, 0)), name=f'{name}_0_height_pad')(x)
         if encoder_output.shape[2] != x.shape[2]:
             x = layers.ZeroPadding2D(((0, 0), (0, 1)), name=f'{name}_0_width_pad')(x)
-        x = layers.Concatenate(axis=bn_axis, name=f'{name}_0_concat')([x, encoder_output])
+        if decoder_shortcut_mode == 'add':
+            encoder_output = layers.Conv2D(x.shape[-1], 3, padding='SAME', name=f'{name}_0_decoder_conv')(encoder_output)
+            x = layers.Add(name=f'{name}_0_decoder_shortcut_add')([x, encoder_output])
+        else:
+            x = layers.Concatenate(axis=bn_axis, name=f'{name}_0_decoder_shortcut_concat')([x, encoder_output])
 
     shortcut = x if has_shortcut else None
 
