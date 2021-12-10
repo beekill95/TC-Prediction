@@ -5,7 +5,8 @@ def Unet(
         input_shape=None,
         input_tensor=None,
         filters_block=[64, 128, 256, 512, 1024],
-        classifier_activation='sigmoid',
+        output_classes=2,
+        classifier_activation='softmax',
         decoder_shortcut_mode='add', # 2 possible modes: 'concat' and 'add'
         model_name=None):
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
@@ -41,15 +42,10 @@ def Unet(
                 name=f'decoder_blk_{i}')
 
     # The output part.
-    x = layers.Conv2D(1, 5, padding='SAME', name='out_conv')(x)
-    x = layers.BatchNormalization(
-            axis=bn_axis,
-            epsilon=1.001e-5,
-            name='out_bn')(x)
+    x = layers.Conv2D(output_classes, 3, padding='SAME', name='out_conv')(x)
+    x = layers.BatchNormalization(axis=bn_axis, epsilon=1.001e-5, name='out_bn')(x)
     if classifier_activation:
-        x = layers.Activation(
-                classifier_activation,
-                name='activation_out')(x)
+        x = layers.Activation(classifier_activation, name='activation_out')(x)
 
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
