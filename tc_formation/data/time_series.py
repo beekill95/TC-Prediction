@@ -7,7 +7,7 @@ import numpy as np
 import os
 import pandas as pd
 import tensorflow as tf
-from typing import List
+from typing import List, Tuple
 import xarray as xr
 
 
@@ -29,7 +29,7 @@ class TimeSeriesTropicalCycloneDataLoader:
         name = os.path.basename(path)
         name, _ = os.path.splitext(name)
         # The date of the observation is embedded in the filename: `fnl_%Y%m%d_%H_%M.nc`
-        date_part = ''.join(list(name)[4:-3])
+        date_part = ''.join(list(name)[4:])
 
         date = datetime.strptime(date_part, '%Y%m%d_%H_%M')
 
@@ -42,17 +42,6 @@ class TimeSeriesTropicalCycloneDataLoader:
     @classmethod
     def _are_valid_paths(cls, paths: List[str]) -> bool:
         return all([os.path.isfile(p) for p in paths])
-
-    @classmethod
-    def _set_dataset_shape(
-            cls,
-            data: tf.Tensor,
-            gt: tf.Tensor,
-            shape: tuple,
-            softmax_output: bool):
-        data.set_shape(shape)
-        gt.set_shape(shape[:2] + ((2,) if softmax_output else (1,)))
-        return data, gt
 
     @abc.abstractmethod
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
@@ -70,13 +59,8 @@ class TimeSeriesTropicalCycloneDataLoader:
         # Convert to tf dataset.
         dataset = self._process_to_dataset(tc_df)
 
-        # Tensorflow should figure out the shape of the output of previous map,
-        # but it doesn't, so we have to do it ourself.
-        # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
-        dataset = dataset.map(partial(cls._set_dataset_shape, data_shape=self._data_shape))
-
         if shuffle:
-            dataset = dataset.shuffle(len(tc_df))
+            dataset = dataset.shuffle(batch_size * 3)
 
         dataset = dataset.cache()
         dataset = dataset.batch(batch_size)
@@ -90,7 +74,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
         self._clip_threshold = clip_threshold
 
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
-        cls = TimeSeriesTropicalCycloneWithGridProbabilityData
+        cls = TimeSeriesTropicalCycloneWithGridProbabilityDataLoader
 
         dataset = tf.data.Dataset.from_tensor_slices({
             'Path': np.asarray(tc_df['Path'].sum()).reshape((-1, len(self._previous_hours) + 1)),
@@ -98,58 +82,104 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             'Latitude': tc_df['Latitude'],
             'Longitude': tc_df['Longitude'],
         })
-
+        
         dataset = dataset.map(
             lambda row: tcd_utils.new_py_function(
-                lambda row: (
-                    cls._load_reanalysis(row['Path'], self._subset),
-                    cls._create_probability_grid_gt(
-                        row['TC'],
-                        self._data_shape,
-                        row['Latitude'],
-                        row['Longitude'],
-                        self._softmax_output,
-                        self._tc_avg_radius_lat_deg,
-                        self._clip_threshold,
-                    )
+                    lambda row: cls._load_reanalysis_and_gt(
+                            [path.decode('utf-8') for path in row['Path'].numpy()],
+                            self._subset,
+                            row['TC'].numpy(),
+                            self._data_shape,
+                            row['Latitude'].numpy(),
+                            row['Longitude'].numpy(),
+                            self._tc_avg_radius_lat_deg,
+                            self._clip_threshold,
+                            self._softmax_output,
+                        ),
+                    inp=[row],
+                    Tout=[tf.float32, tf.float32],
+                    name='load_observation_and_gt',
                 ),
-                inp=[row],
-                Tout=[tf.float32, tf.float32],
-                name='load_observation_and_groundtruth',
-            ),
             num_parallel_calls=tf.data.AUTOTUNE,
             deterministic=False,
         )
+
+        # Tensorflow should figure out the shape of the output of previous map,
+        # but it doesn't, so we have to do it ourself.
+        # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+        dataset = dataset.map(partial(
+            cls._set_dataset_shape,
+            shape=(len(self._previous_hours) + 1,) + self._data_shape,
+            softmax_output=self._softmax_output))
         
         return dataset
 
     @classmethod
-    def _load_reanalysis(cls, paths: List[str], subset: dict=None) -> np.ndarray:
+    def _set_dataset_shape(
+            cls,
+            data: tf.Tensor,
+            gt: tf.Tensor,
+            shape: tuple,
+            softmax_output: bool):
+        data.set_shape(shape)
+        gt.set_shape(shape[1:3] + ((2,) if softmax_output else (1,)))
+        return data, gt
+
+    @classmethod
+    def _load_reanalysis_and_gt(
+            cls,
+            paths: List[str],
+            subset: dict,
+            has_tc: bool,
+            data_shape: tuple,
+            tc_latitudes: float,
+            tc_longitudes: float,
+            tc_avg_radius_lat_deg: int,
+            clip_threshold: float,
+            softmax_output: bool,
+        ) -> np.ndarray:
+
         datasets = []
         for path in paths:
             dataset = xr.open_dataset(path, engine='netcdf4')
-            dataset.append(extract_variables_from_dataset(dataset, subset))
-        datasets = np.concatenate(datasets)
-        datasets = np.moveaxis(datasets, -1, 1)
-        return datasets
+            latitudes = dataset['lat']
+            longitudes = dataset['lon']
+            dataset = extract_variables_from_dataset(dataset, subset)
+            datasets.append(np.expand_dims(dataset, axis=0))
+        datasets = np.concatenate(datasets, axis=0)
+
+        gt = cls._create_probability_grid_gt(
+                has_tc,
+                data_shape,
+                latitudes,
+                longitudes,
+                tc_latitudes,
+                tc_longitudes,
+                softmax_output,
+                tc_avg_radius_lat_deg,
+                clip_threshold
+            )
+
+        return datasets, gt
 
     @classmethod
     def _create_probability_grid_gt(
             cls,
             has_tc: bool,
-            data_shape: tuple,
+            data_shape: Tuple[int, int, int],
             latitudes: list,
             longitudes: list,
+            tc_latitudes: float,
+            tc_longitudes: float,
             softmax_output: bool,
             tc_avg_radius_lat_deg: int,
             clip_threshold: float):
-
         groundtruth = np.zeros(data_shape[:-1])
         x, y = np.meshgrid(longitudes, latitudes)
 
         if has_tc:
-            lats = latitudes
-            lons = longitudes
+            lats = tc_latitudes
+            lons = tc_longitudes
             lats = lats if isinstance(lats, list) else [lats]
             lons = lons if isinstance(lons, list) else [lons]
             for lat, lon in zip(lats, lons):
@@ -166,7 +196,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             new_groundtruth[:, :] = np.where(groundtruth > 0, 1, 0)
         else:
             new_groundtruth = np.zeros(np.shape(groundtruth) + (2,))
-            new_groundtruth[:, :, 0] = np.where(groundtruth == 0, 1, 0)
+            new_groundtruth[:, :, 0] = np.where(groundtruth > 0, 0, 1)
             new_groundtruth[:, :, 1] = np.where(groundtruth > 0, 1, 0)
 
         return new_groundtruth
