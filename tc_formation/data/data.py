@@ -1,6 +1,7 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import reduce, partial
 import glob
+import tc_formation.data.label as label
 import numpy as np
 import os
 import pandas as pd
@@ -15,6 +16,7 @@ def _extract_date_from_observation_path(path):
     filename = Path(path).stem
     return ''.join(filename.split('_')[1:-1])
 
+"""DEPRECATED: should favor the same method in label module."""
 def parse_tc_datetime(column: pd.Series):
     return pd.to_datetime(column, format='%Y-%m-%d %H:%M:%S')
 
@@ -74,6 +76,7 @@ def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
 
     return data
 
+"""DEPRECATED: should favor the same method in label module."""
 def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None):
     if leadtimes is None:
         return tc
@@ -93,6 +96,7 @@ def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None
 
     return tc[mask]
 
+"""DEPRECATED: should favor the same method in label module."""
 def group_observations_by_date(tc_labels: pd.DataFrame):
     def concat_values(values):
         return reduce(lambda agg, x: agg + [x], values, [])
@@ -308,6 +312,113 @@ def load_data_with_tc_probability(
     return dataset.prefetch(prefetch_batch)
 
 
+def load_time_series_dataset(
+        label_path,
+        data_shape,
+        batch_size=32,
+        prefetch_batch=1,
+        leadtimes=None,
+        shuffle=False,
+        group_observations_by_date=True,
+        tc_avg_radius_lat_deg=2,
+        subset=None):
+    # TODO: change the name of this!
+    def a(path: str) -> [str]:
+        name = os.path.basename(path)
+        date = datetime.strptime(''.join(list(name)[4:-3]), '%Y%m%d_%H_%M')
+        date -= timedelta(hours=6)
+        new_path = os.path.join(
+                os.path.dirname(path),
+                f"fnl_{date.strftime('%Y%m%d_%H_%M')}.nc")
+        return [path, new_path]
+
+    def files_exist(row) -> bool:
+        paths = [p.decode('utf-8') for p in row['Path'].numpy()]
+        return all([os.path.isfile(p) for p in paths])
+
+    def b_with_tc_prob(row, tc_avg_radius_lat_deg=2, clip_threshold=0.1, subset=None):
+        paths = [p.decode('utf-8') for p in row['Path'].numpy()]
+
+        ds1 = xr.open_dataset(paths[0], engine='netcdf4')
+        ds2 = xr.open_dataset(paths[1], engine='netcdf4')
+
+        data1 = extract_variables_from_dataset(ds1, subset)
+        data2 = extract_variables_from_dataset(ds2, subset)
+        diff = data1 - data2
+
+        data = np.concatenate([data1, diff], axis=-1)
+
+        # Just for testing!
+        # TODO: refactor this into a separate function,
+        # so that we can reuse this function in multiple places.
+        groundtruth = np.zeros(data.shape[:-1])
+
+        latitudes = ds1['lat']
+        longitudes = ds1['lon']
+        x, y = np.meshgrid(longitudes, latitudes)
+        if row['TC']:
+            lats = row['Latitude'].numpy()
+            lons = row['Longitude'].numpy()
+            lats = lats if isinstance(lats, list) else [lats]
+            lons = lons if isinstance(lons, list) else [lons]
+            for lat, lon in zip(lats, lons):
+                x_diff = x - lon
+                y_diff = y - lat
+
+                # RBF kernel.
+                prob = np.exp(-(x_diff * x_diff + y_diff * y_diff)/(2 * tc_avg_radius_lat_deg ** 2))
+                # prob = np.exp(-(x_diff * x_diff + y_diff * y_diff) / tc_avg_radius_lat_deg)
+                prob[prob < clip_threshold] = 0
+                groundtruth += prob
+
+        groundtruth = groundtruth[:, :, None]
+        groundtruth = np.where(groundtruth > 0, 1, 0)
+
+        return data, groundtruth
+
+    tc_labels = label.load_label(label_path, group_observations_by_date, leadtimes)
+    tc_labels['Path'] = tc_labels['Path'].apply(a)
+    # dataset = tf.data.Dataset.from_tensor_slices(dict(tc_labels[['Path', 'TC', 'Latitude', 'Longitude']]))
+    dataset = tf.data.Dataset.from_tensor_slices({
+        'Path': np.asarray(tc_labels['Path'].sum()).reshape((-1, 2)),
+        'TC': tc_labels['TC'],
+        'Latitude': tc_labels['Latitude'],
+        'Longitude': tc_labels['Longitude'],
+    })
+
+    if shuffle:
+        dataset = dataset.shuffle(len(dataset))
+
+    # Load given dataset to memory.
+    dataset = dataset.filter(lambda row: utils.new_py_function(
+        files_exist,
+        inp=[row],
+        Tout=bool,
+        name='files_exist_filter'))
+    dataset = dataset.map(lambda row: utils.new_py_function(
+        partial(b_with_tc_prob, subset=subset, tc_avg_radius_lat_deg=tc_avg_radius_lat_deg),
+        inp=[row],
+        Tout=[tf.float32, tf.float32],
+        name='load_observation_data'),
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=False,
+    )
+
+    # Tensorflow should figure out the shape of the output of previous map,
+    # but it doesn't, so we have to do it our self.
+    # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+    dataset = dataset.map(partial(_set_shape_tc_probability, data_shape=data_shape))
+
+    # Cache the dataset for better performance.
+    dataset = dataset.cache()
+
+    # Batch the dataset.
+    dataset = dataset.batch(batch_size)
+
+    # Always prefetch the data for better performance.
+    return dataset.prefetch(prefetch_batch)
+
+
 def load_observation_data(observation_path, label, include_tc_position, subset=None):
     dataset = xr.open_dataset(observation_path.decode('utf-8'),
                               engine='netcdf4')
@@ -320,8 +431,12 @@ def load_observation_data_v1(path, tc, subset=None):
     data = extract_variables_from_dataset(dataset, subset)
     return data, [tc]
 
-
-def load_observation_data_with_tc_probability(row, tc_avg_radius_lat_deg=2, clip_threshold=0.1, subset=None):
+def load_observation_data_with_tc_probability(
+        row,
+        tc_avg_radius_lat_deg=2,
+        clip_threshold=0.1,
+        subset=None,
+        sigmoid_output=True):
     path = row['Path'].numpy().decode('utf-8')
     dataset = xr.open_dataset(path, engine='netcdf4')
     data = extract_variables_from_dataset(dataset, subset)
@@ -346,10 +461,15 @@ def load_observation_data_with_tc_probability(row, tc_avg_radius_lat_deg=2, clip
             prob[prob < clip_threshold] = 0
             groundtruth += prob
 
-    groundtruth = groundtruth[:, :, None]
-    groundtruth = np.where(groundtruth > 0, 1, 0)
+    if sigmoid_output:
+        new_groundtruth = np.zeros(np.shape(groundtruth) + (1,))
+        new_groundtruth[:, :] = np.where(groundtruth > 0, 1, 0)
+    else:
+        new_groundtruth = np.zeros(np.shape(groundtruth) + (2,))
+        new_groundtruth[:, :, 0] = np.where(groundtruth == 0, 1, 0)
+        new_groundtruth[:, :, 1] = np.where(groundtruth > 0, 1, 0)
 
-    return data, groundtruth
+    return data, new_groundtruth
 
 
 def _set_shape(observation, label, data_shape, include_tc_position):
