@@ -55,17 +55,21 @@ class NthBinaryAccuracy(NthClassificationMixin, tf.metrics.BinaryAccuracy):
 
 
 class CustomF1Score(tf.keras.metrics.Metric):
-    def __init__(self, name='f1_score', **kwargs):
+    def __init__(self, name='f1_score', class_id=None, **kwargs):
         super().__init__(name=name, **kwargs)
         self.f1 = self.add_weight(name='f1', initializer='zeros')
-        self.precision_fn = tf.metrics.Precision(thresholds=0.5)
-        self.recall_fn = tf.metrics.Recall(thresholds=0.5)
+        self.precision_fn = tf.metrics.Precision(thresholds=0.5, class_id=class_id)
+        self.recall_fn = tf.metrics.Recall(thresholds=0.5, class_id=class_id)
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        p = self.precision_fn(y_true, y_pred)
-        r = self.recall_fn(y_true, y_pred)
+        self.precision_fn.update_state(y_true, y_pred)
+        self.recall_fn.update_state(y_true, y_pred)
+
+        p = self.precision_fn.result()
+        r = self.recall_fn.result()
+
         # since f1 is a variable, we use assign
-        self.f1.assign(2 * ((p * r) / (p + r + 1e-6)))
+        self.f1.assign(2 * p * r / (p + r + 1e-6))
 
     def result(self):
         return self.f1

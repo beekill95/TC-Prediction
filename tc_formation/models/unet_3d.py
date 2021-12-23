@@ -1,15 +1,15 @@
+import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
 
-def Unet(
+def Unet3D(
         input_shape=None,
         input_tensor=None,
         filters_block=[64, 128, 256, 512, 1024],
         output_classes=2,
         classifier_activation='softmax',
         decoder_shortcut_mode='add', # 2 possible modes: 'concat' and 'add'
-        model_name=None,
-        include_top=True):
+        model_name=None):
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
     if input_tensor is None:
@@ -43,16 +43,16 @@ def Unet(
                 name=f'decoder_blk_{i}')
 
     # The output part.
-    if include_top:
-        x = layers.Conv2D(
-                output_classes,
-                3,
-                # kernel_regularizer=keras.regularizers.l2(0.01),
-                padding='SAME',
-                name='out_conv')(x)
-        x = layers.BatchNormalization(axis=bn_axis, epsilon=1.001e-5, name='out_bn')(x)
-        if classifier_activation:
-            x = layers.Activation(classifier_activation, name='activation_out')(x)
+    x = layers.Conv3D(
+            output_classes,
+            (4, 1, 1),
+             kernel_regularizer=keras.regularizers.l2(0.01),
+            padding='valid',
+            name='out_conv')(x)
+    x = tf.squeeze(x, 1)
+    x = layers.BatchNormalization(axis=bn_axis, epsilon=1.001e-5, name='out_bn')(x)
+    if classifier_activation:
+        x = layers.Activation(classifier_activation, name='activation_out')(x)
 
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
@@ -69,11 +69,11 @@ def encoder_block(x, filters, kernel_size=3, pooling=True, has_shortcut=True, na
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
     if pooling:
-        x = layers.MaxPool2D((2, 2), strides=2, name=f'{name}_pool')(x)
+        x = layers.MaxPool3D((2, 2, 2), strides=2, name=f'{name}_pool')(x)
 
     shortcut = x if has_shortcut else None
 
-    x = layers.Conv2D(
+    x = layers.Conv3D(
         filters,
         kernel_size,
         # kernel_regularizer=keras.regularizers.l2(0.01),
@@ -87,7 +87,7 @@ def encoder_block(x, filters, kernel_size=3, pooling=True, has_shortcut=True, na
         'relu',
         name=f'{name}_1_relu')(x)
 
-    x = layers.Conv2D(
+    x = layers.Conv3D(
         filters,
         kernel_size,
         # kernel_regularizer=keras.regularizers.l2(0.01),
@@ -110,16 +110,16 @@ def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mo
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
     if upsampling:
-        x = layers.UpSampling2D((2, 2), name=f'{name}_0_pool')(x)
+        x = layers.UpSampling3D((2, 2, 2), name=f'{name}_0_pool')(x)
 
     # Concatenate the decoder output and encoder output
     if encoder_output is not None:
-        if encoder_output.shape[1] != x.shape[1]:
-            x = layers.ZeroPadding2D(((0, 1), (0, 0)), name=f'{name}_0_height_pad')(x)
         if encoder_output.shape[2] != x.shape[2]:
-            x = layers.ZeroPadding2D(((0, 0), (0, 1)), name=f'{name}_0_width_pad')(x)
+            x = layers.ZeroPadding3D(((0, 0), (0, 1), (0, 0)), name=f'{name}_0_height_pad')(x)
+        if encoder_output.shape[3] != x.shape[3]:
+            x = layers.ZeroPadding3D(((0, 0), ( 0, 0), (0, 1)), name=f'{name}_0_width_pad')(x)
         if decoder_shortcut_mode == 'add':
-            encoder_output = layers.Conv2D(
+            encoder_output = layers.Conv3D(
                     x.shape[-1],
                     3,
                     # kernel_regularizer=keras.regularizers.l2(0.01),
@@ -131,7 +131,7 @@ def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mo
 
     shortcut = x if has_shortcut else None
 
-    x = layers.Conv2D(
+    x = layers.Conv3D(
         filters,
         kernel_size,
         # kernel_regularizer=keras.regularizers.l2(0.01),
@@ -145,7 +145,7 @@ def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mo
         'relu',
         name=f'{name}_1_relu')(x)
 
-    x = layers.Conv2D(
+    x = layers.Conv3D(
         filters,
         kernel_size,
         # kernel_regularizer=keras.regularizers.l2(0.01),

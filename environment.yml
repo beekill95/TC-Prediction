@@ -13,6 +13,7 @@ dependencies:
   - matplotlib
   - netCDF4
   - numpy
+  - opencv
   - pandas
   - pip
   - pip:

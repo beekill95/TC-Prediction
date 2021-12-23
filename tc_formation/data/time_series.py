@@ -66,12 +66,17 @@ class TimeSeriesTropicalCycloneDataLoader:
         dataset = dataset.batch(batch_size)
         return dataset.prefetch(1)
 
+    @abc.abstractmethod
+    def load_single_data(self, data_path):
+        ...
+
 class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalCycloneDataLoader):
-    def __init__(self, tc_avg_radius_lat_deg=3, softmax_output=True, clip_threshold=0.1, *args, **kwargs):
+    def __init__(self, tc_avg_radius_lat_deg=3, softmax_output=True, smooth_gt=False, clip_threshold=0.1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._softmax_output = softmax_output
         self._tc_avg_radius_lat_deg = tc_avg_radius_lat_deg
         self._clip_threshold = clip_threshold
+        self._smooth_gt = smooth_gt
 
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         cls = TimeSeriesTropicalCycloneWithGridProbabilityDataLoader
@@ -95,6 +100,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
                             self._tc_avg_radius_lat_deg,
                             self._clip_threshold,
                             self._softmax_output,
+                            self._smooth_gt,
                         ),
                     inp=[row],
                     Tout=[tf.float32, tf.float32],
@@ -113,6 +119,22 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             softmax_output=self._softmax_output))
         
         return dataset
+
+    def load_single_data(self, data_row):
+        cls = TimeSeriesTropicalCycloneWithGridProbabilityDataLoader
+        data, gt = cls._load_reanalysis_and_gt(
+            [data_row['Path']],
+            self._subset,
+            data_row['TC'],
+            self._data_shape,
+            data_row['Latitude'],
+            data_row['Longitude'],
+            self._tc_avg_radius_lat_deg,
+            self._clip_threshold,
+            self._softmax_output,
+            self._smooth_gt,
+        )
+        return data[0], gt[0]
 
     @classmethod
     def _set_dataset_shape(
@@ -137,6 +159,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             tc_avg_radius_lat_deg: int,
             clip_threshold: float,
             softmax_output: bool,
+            smooth_gt: bool,
         ) -> np.ndarray:
 
         datasets = []
@@ -156,8 +179,9 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
                 tc_latitudes,
                 tc_longitudes,
                 softmax_output,
+                smooth_gt,
                 tc_avg_radius_lat_deg,
-                clip_threshold
+                clip_threshold,
             )
 
         return datasets, gt
@@ -172,8 +196,9 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             tc_latitudes: float,
             tc_longitudes: float,
             softmax_output: bool,
+            smooth_gt: bool,
             tc_avg_radius_lat_deg: int,
-            clip_threshold: float):
+            clip_threshold: float,):
         groundtruth = np.zeros(data_shape[:-1])
         x, y = np.meshgrid(longitudes, latitudes)
 
@@ -193,13 +218,35 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
 
         if not softmax_output:
             new_groundtruth = np.zeros(np.shape(groundtruth) + (1,))
-            new_groundtruth[:, :] = np.where(groundtruth > 0, 1, 0)
+            new_groundtruth[:, :, 0] = np.where(
+                    groundtruth > 0,
+                    1 if not smooth_gt else groundtruth,
+                    0)
         else:
             new_groundtruth = np.zeros(np.shape(groundtruth) + (2,))
             new_groundtruth[:, :, 0] = np.where(groundtruth > 0, 0, 1)
-            new_groundtruth[:, :, 1] = np.where(groundtruth > 0, 1, 0)
+            new_groundtruth[:, :, 1] = np.where(
+                    groundtruth > 0,
+                    1 if not smooth_gt else groundtruth,
+                    0)
 
         return new_groundtruth
+
+class TropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalCycloneWithGridProbabilityDataLoader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, previous_hours=[])
+
+    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None):
+        def remove_time_dimension(X, y):
+            return tf.squeeze(X, axis=1), y
+
+        dataset = super().load_dataset(
+                data_path=data_path,
+                shuffle=shuffle,
+                batch_size=batch_size,
+                leadtimes=leadtimes)
+
+        return dataset.map(remove_time_dimension)
 
 def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
     data = []

@@ -463,7 +463,7 @@ def load_observation_data_with_tc_probability(
 
     if sigmoid_output:
         new_groundtruth = np.zeros(np.shape(groundtruth) + (1,))
-        new_groundtruth[:, :] = np.where(groundtruth > 0, 1, 0)
+        new_groundtruth[:, :, 0] = np.where(groundtruth > 0, 1, 0)
     else:
         new_groundtruth = np.zeros(np.shape(groundtruth) + (2,))
         new_groundtruth[:, :, 0] = np.where(groundtruth == 0, 1, 0)
