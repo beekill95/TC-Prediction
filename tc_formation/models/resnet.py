@@ -106,7 +106,14 @@ def _ResNet(stack_fn,
             x = layers.GlobalMaxPooling2D(name='max_pool')(x)
 
     # Create model.
-    model = keras.Model(img_input, x, name=model_name)
+    # Ensure that the model takes into account
+    # any potential predecessors of `input_tensor`.
+    if input_tensor is not None:
+        inputs = keras.utils.get_source_inputs(input_tensor)
+    else:
+        inputs = img_input
+
+    model = keras.Model(inputs, x, name=model_name)
 
     return model
 
