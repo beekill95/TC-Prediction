@@ -47,14 +47,27 @@ class TimeSeriesTropicalCycloneDataLoader:
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         pass
 
-    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None):
+    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None):
         cls = TimeSeriesTropicalCycloneDataLoader
 
         # Load TC dataframe.
+        print('Dataframe loading.')
         tc_df = self._load_tc_csv(data_path, leadtimes)
+        print('Dataframe in memory')
         tc_df['Path'] = tc_df['Path'].apply(
                 partial(cls._add_previous_observation_data_paths, previous_times=self._previous_hours))
+        print('Add previous hours')
         tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
+
+        if nonTCRatio is not None:
+            nb_nonTC = int(round(len(tc_df[tc_df['TC']]) * nonTCRatio))
+            with_tc_df = tc_df[tc_df['TC']]
+            without_tc_df = tc_df[~tc_df['TC']].sample(nb_nonTC)
+            tc_df = pd.concat([with_tc_df, without_tc_df], axis=0)
+            tc_df.sort_values('Date', axis=0, inplace=True)
+
+        print('Check previous hours valid')
+        print('Dataframe loaded')
 
         # Convert to tf dataset.
         dataset = self._process_to_dataset(tc_df)
@@ -87,6 +100,8 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             'Latitude': tc_df['Latitude'],
             'Longitude': tc_df['Longitude'],
         })
+        
+        print('created dataset')
         
         dataset = dataset.map(
             lambda row: tcd_utils.new_py_function(
@@ -122,8 +137,13 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
 
     def load_single_data(self, data_row):
         cls = TimeSeriesTropicalCycloneWithGridProbabilityDataLoader
+
+        paths = cls._add_previous_observation_data_paths(data_row['Path'], self._previous_hours)
+        if not cls._are_valid_paths(paths):
+            raise ValueError('Invalid data path: there are not enough observation paths.')
+
         data, gt = cls._load_reanalysis_and_gt(
-            [data_row['Path']],
+            paths,
             self._subset,
             data_row['TC'],
             self._data_shape,
@@ -134,7 +154,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             self._softmax_output,
             self._smooth_gt,
         )
-        return data[0], gt[0]
+        return data, gt
 
     @classmethod
     def _set_dataset_shape(
@@ -160,7 +180,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             clip_threshold: float,
             softmax_output: bool,
             smooth_gt: bool,
-        ) -> np.ndarray:
+        ) -> Tuple[np.ndarray, np.ndarray]:
 
         datasets = []
         for path in paths:
@@ -236,7 +256,7 @@ class TropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalCycloneWith
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs, previous_hours=[])
 
-    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None):
+    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None):
         def remove_time_dimension(X, y):
             return tf.squeeze(X, axis=1), y
 
@@ -244,15 +264,117 @@ class TropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalCycloneWith
                 data_path=data_path,
                 shuffle=shuffle,
                 batch_size=batch_size,
-                leadtimes=leadtimes)
+                leadtimes=leadtimes,
+                nonTCRatio=nonTCRatio)
 
         return dataset.map(remove_time_dimension)
+
+class TimeSeriesTropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneDataLoader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
+        cls = TimeSeriesTropicalCycloneWithLocationDataLoader
+
+        dataset = tf.data.Dataset.from_tensor_slices({
+            'Path': np.asarray(tc_df['Path'].sum()).reshape((-1, len(self._previous_hours) + 1)),
+            'TC': tc_df['TC'],
+            'Latitude': tc_df['Latitude'],
+            'Longitude': tc_df['Longitude'],
+        })
+        
+        dataset = dataset.map(
+            lambda row: tcd_utils.new_py_function(
+                    lambda row: cls._load_reanalysis_and_loc(
+                            [path.decode('utf-8') for path in row['Path'].numpy()],
+                            self._subset,
+                            row['TC'].numpy(),
+                            row['Latitude'].numpy(),
+                            row['Longitude'].numpy(),
+                        ),
+                    inp=[row],
+                    Tout=[tf.float32, tf.float32],
+                    name='load_observation_and_gt',
+                ),
+            num_parallel_calls=tf.data.AUTOTUNE,
+            deterministic=False,
+        )
+
+        # Tensorflow should figure out the shape of the output of previous map,
+        # but it doesn't, so we have to do it ourself.
+        # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+        dataset = dataset.map(partial(
+            cls._set_dataset_shape,
+            shape=(len(self._previous_hours) + 1,) + self._data_shape,
+        ))
+        
+        return dataset
+
+    @classmethod
+    def _load_reanalysis_and_loc(
+            cls,
+            paths: List[str],
+            subset: dict,
+            has_tc: bool,
+            tc_latitudes: float,
+            tc_longitudes: float,
+        ) -> Tuple[np.ndarray, np.ndarray]:
+
+        datasets = []
+        for path in paths:
+            dataset = xr.open_dataset(path, engine='netcdf4')
+            dataset = extract_variables_from_dataset(dataset, subset)
+            datasets.append(np.expand_dims(dataset, axis=0))
+        datasets = np.concatenate(datasets, axis=0)
+
+        if has_tc:
+            if isinstance(tc_latitudes, list):
+                gt = np.asarray([1.0, tc_latitudes[0], tc_longitudes[0]])
+            else:
+                gt = np.asarray([1.0, tc_latitudes, tc_longitudes])
+        else:
+            gt = np.asarray([0, 0, 0])
+            
+        return datasets, gt
+
+    @classmethod
+    def _set_dataset_shape(
+            cls,
+            data: tf.Tensor,
+            loc: tf.Tensor,
+            shape: tuple):
+        data.set_shape(shape)
+        loc.set_shape((3,))
+        return data, loc
+
+
+class TropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneWithLocationDataLoader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, previous_hours=[])
+
+    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None):
+        def remove_time_dimension(X, y):
+            return tf.squeeze(X, axis=1), y
+
+        dataset = super().load_dataset(
+                data_path=data_path,
+                shuffle=shuffle,
+                batch_size=batch_size,
+                leadtimes=leadtimes,
+                nonTCRatio=nonTCRatio)
+
+        return dataset.map(remove_time_dimension)
+
 
 def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
     data = []
     for var in dataset.data_vars:
+        var = var.lower()
         if subset is not None and var in subset:
-            values = dataset[var].sel(lev=subset[var]).values
+            if subset[var] is not None:
+                values = dataset[var].sel(lev=subset[var]).values
+            else:
+                continue
         else:
             values = dataset[var].values
 
