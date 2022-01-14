@@ -17,6 +17,20 @@ class FromLogitsMixin:
         return super().update_state(y_true, y_pred, sample_weight)
 
 
+class FromLogitsDecorator(tf.metrics.Metric):
+    def __init__(self, metric, *args, **kwargs):
+        super().__init__(*args, name=metric.name, **kwargs)
+        self._metric = metric
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred = tf.nn.sigmoid(y_pred)
+        return self._metric.update_state(y_true, y_pred, sample_weight)
+
+    def result(self):
+        return self._metric.result()
+
+
+
 class F1Score(FromLogitsMixin, tfa.metrics.F1Score):
     ...
 
@@ -57,7 +71,6 @@ class NthBinaryAccuracy(NthClassificationMixin, tf.metrics.BinaryAccuracy):
 class CustomF1Score(tf.keras.metrics.Metric):
     def __init__(self, name='f1_score', class_id=None, **kwargs):
         super().__init__(name=name, **kwargs)
-        self.f1 = self.add_weight(name='f1', initializer='zeros')
         self.precision_fn = tf.metrics.Precision(thresholds=0.5, class_id=class_id)
         self.recall_fn = tf.metrics.Recall(thresholds=0.5, class_id=class_id)
 
@@ -65,17 +78,12 @@ class CustomF1Score(tf.keras.metrics.Metric):
         self.precision_fn.update_state(y_true, y_pred)
         self.recall_fn.update_state(y_true, y_pred)
 
+    def result(self):
         p = self.precision_fn.result()
         r = self.recall_fn.result()
-
-        # since f1 is a variable, we use assign
-        self.f1.assign(2 * p * r / (p + r + 1e-6))
-
-    def result(self):
-        return self.f1
+        return 2 * p * r / (p + r + 1e-6)
 
     def reset_states(self):
         # we also need to reset the state of the precision and recall objects
         self.precision_fn.reset_states()
         self.recall_fn.reset_states()
-        self.f1.assign(0)
