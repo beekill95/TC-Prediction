@@ -46,7 +46,7 @@ def parse_arguments(args=None):
         help='''
             Path to directory contains all observation files .nc and .conf file.
             This is also the directory that the will contain the output csv file.
-            The output file will be `tc_{lead_time}h.csv`.
+            The output file will be `tc_{lead_time}h_{basins}.csv`.
             ''')
 
     parser.add_argument(
@@ -322,7 +322,7 @@ if __name__ == '__main__':
         leadtimes=args.leadtime,
     )
     leadtime_str = '_'.join(f'{l}h' for l in args.leadtime)
-    labels.to_csv(
-        os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}.csv'),
-        index=False
-    )
+    basins_str = '_'.join(f'{b}' for b in args.basins)
+    output_path = os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}_{basins_str}.csv')
+    labels.to_csv(output_path, index=False)
+    print(f'DONE: output to {output_path}')
