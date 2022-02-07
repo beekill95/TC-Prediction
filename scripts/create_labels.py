@@ -263,13 +263,22 @@ def create_labels(
                 labels.append(observation_label)
 
         if has_tropical_cnt == 0:
-            is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
-            if len(tc[is_tc_occuring]) == 0:
-                labels.append({
-                    'Date': observation_date,
-                    'TC': False,
-                    'Path': observation_filename,
-                })
+            # TODO: Update version 2 for testing
+            # Instead of removing time where TC is happening,
+            # we will keep these days, but label it as negative,
+            # for the model to learn the pattern where TC is about to occur.
+            # is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
+            # if len(tc[is_tc_occuring]) == 0:
+            #     labels.append({
+            #         'Date': observation_date,
+            #         'TC': False,
+            #         'Path': observation_filename,
+            #     })
+            labels.append({
+                'Date': observation_date,
+                'TC': False,
+                'Path': observation_filename,
+            })
 
     labels = pd.DataFrame(
             labels,
@@ -323,6 +332,7 @@ if __name__ == '__main__':
     )
     leadtime_str = '_'.join(f'{l}h' for l in args.leadtime)
     basins_str = '_'.join(f'{b}' for b in args.basins)
-    output_path = os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}_{basins_str}.csv')
+    # TODO: Update version 2, please search in this file for comment what this version changes.
+    output_path = os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}_{basins_str}_v2.csv')
     labels.to_csv(output_path, index=False)
     print(f'DONE: output to {output_path}')

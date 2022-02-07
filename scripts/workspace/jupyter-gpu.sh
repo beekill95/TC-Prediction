@@ -11,4 +11,4 @@ ssh -N -f -R $port:localhost:$port $server
 
 # Finally, start jupyter notebook at the specified port.
 echo "Starting jupyter notebook at port $port"
-jupyter notebook --no-browser --ip 0.0.0.0 --port $port
+jupyter-lab --no-browser --ip 0.0.0.0 --port $port --notebook-dir=.
