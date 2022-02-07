@@ -220,5 +220,7 @@ class IntegratedGradientVisualizer:
 
         # Show integrated gradient as contour on axes.
         lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
-        ax.contourf(lats, longs, igrads_attr)
+        cs = ax.contourf(lats, longs, igrads_attr)
+        ax.get_figure().colorbar(cs, ax=ax, fraction=0.012, pad=0.015)
+
         return igrads_attr

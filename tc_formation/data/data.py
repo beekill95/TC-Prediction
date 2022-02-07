@@ -60,9 +60,14 @@ def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
     data = []
     for var in dataset.data_vars:
         if subset is not None and var in subset:
-            values = dataset[var].sel(lev=subset[var]).values
+            if subset[var] is not None:
+                values = dataset[var].sel(lev=subset[var]).values
+            else:
+                continue
+            # print(var, subset[var])
         else:
             values = dataset[var].values
+            # print(var)
 
         # For 2D dataarray, make it 3D.
         if len(np.shape(values)) != 3:
@@ -218,8 +223,11 @@ def load_data_v1(
         labels = group_observations_by_date(labels)
         print(f'Grouping same observations reduces number of rows from {nb_rows} to {len(labels)}.')
 
+    print(f'Number of positive labels: {np.sum(labels["TC"])}')
+    print(f'Number of negative labels: {np.sum(~labels["TC"])}')
+
     if negative_samples_ratio is not None:
-        raise ValueError('Negative samples ratio is not implemented!')
+        labels = _filter_negative_samples(labels, negative_samples_ratio)
 
     if include_tc_position:
         raise ValueError('Under Construction!')
@@ -427,6 +435,7 @@ def load_observation_data(observation_path, label, include_tc_position, subset=N
     return data, label if include_tc_position else [label]
 
 def load_observation_data_v1(path, tc, subset=None):
+    # print(path)
     dataset = xr.open_dataset(path.decode('utf-8'), engine='netcdf4')
     data = extract_variables_from_dataset(dataset, subset)
     return data, [tc]
@@ -495,7 +504,7 @@ def _filter_negative_samples(dataset, negative_samples_ratio):
     negative_samples = negative_samples.sample(nb_negative_samples_to_take)
 
     result = pd.concat([positive_samples, negative_samples])
-    return result.sort_values(by='Observation').reset_index()
+    return result.sort_values(by='First Observed').reset_index()
 
 
 if __name__ == '__main__':
