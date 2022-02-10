@@ -140,7 +140,7 @@ def _block0(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
         shortcut = layers.BatchNormalization(
             axis=bn_axis, epsilon=1.001e-5, name=name + '_0_bn')(shortcut)
     else:
-        shortcut = x
+        shortcut = layers.MaxPooling2D(1, strides=stride)(x) if stride > 1 else x
 
     x = layers.Conv2D(
         filters, kernel_size, padding='SAME', name=name + '_1_conv')(x)
@@ -180,7 +180,7 @@ def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None
         shortcut = layers.MaxPooling2D(1, strides=stride)(x) if stride > 1 else x
 
     x = layers.Conv2D(
-        filters, kernel_size, padding='SAME', name=name + '_1_conv')(preact)
+        filters, kernel_size, strides=stride, padding='SAME', name=name + '_1_conv')(preact)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
     x = layers.Activation('relu', name=name + '_1_relu')(x)
@@ -190,7 +190,7 @@ def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None
     return x
 
 
-def _stack0(x, filters, blocks, stride1=1, name=None):
+def _stack0(x, filters, blocks, stride1=2, name=None):
     """A set of stacked residual blocks.
 
     Args:
@@ -208,7 +208,7 @@ def _stack0(x, filters, blocks, stride1=1, name=None):
                     name=name + '_block' + str(i))
     return x
 
-def _stack0v2(x, filters, blocks, stride1=1, name=None):
+def _stack0v2(x, filters, blocks, stride1=2, name=None):
     """A set of stacked residual blocks.
 
     Args:
