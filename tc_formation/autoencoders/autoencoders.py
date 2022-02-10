@@ -1,3 +1,4 @@
+import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.backend as backend
 import tensorflow.keras.layers as layers
@@ -85,6 +86,7 @@ def AutoEncoders(input_shape, input_tensor=None, name=None):
             filters=input_shape[-1],
             kernel_size=1,
             name=name + '_decoder_output')(x)
+    x = tf.image.resize(x, input_shape[:2])
 
     if input_tensor is not None:
         inputs = keras.utils.get_source_inputs(input_tensor)
