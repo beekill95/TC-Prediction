@@ -203,6 +203,7 @@ def load_data_v1(
         batch_size=32,
         shuffle=False,
         negative_samples_ratio=None,
+        other_happening_tc_ratio=None,
         prefetch_batch=1,
         include_tc_position=False,
         subset=None,
@@ -210,6 +211,11 @@ def load_data_v1(
         group_same_observations=False):
     # Read labels from path.
     labels = pd.read_csv(labels_path)
+
+    # Make sure that when other happening tc ratio is set,
+    # the our labels have the information to do so.
+    if other_happening_tc_ratio is not None:
+        assert ('Is Other TC Happening' in labels.columns), 'Incompatible label version, requires labels version at least v3'
     
     # Filter in lead time.
     labels = filter_in_leadtime(labels, leadtime)
@@ -226,8 +232,7 @@ def load_data_v1(
     print(f'Number of positive labels: {np.sum(labels["TC"])}')
     print(f'Number of negative labels: {np.sum(~labels["TC"])}')
 
-    if negative_samples_ratio is not None:
-        labels = _filter_negative_samples(labels, negative_samples_ratio)
+    labels = _filter_negative_samples(labels, negative_samples_ratio, other_happening_tc_ratio)
 
     if include_tc_position:
         raise ValueError('Under Construction!')
@@ -252,10 +257,11 @@ def load_data_v1(
     # Tensorflow should figure out the shape of the output of previous map,
     # but it doesn't, so we have to do it our self.
     # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
-    dataset = dataset.map(lambda observation, tc: _set_shape(observation,
-                                                             tc,
-                                                             data_shape,
-                                                             include_tc_position))
+    dataset = dataset.map(
+            lambda observation, tc: _set_shape(observation,
+                                               tc,
+                                               data_shape,
+                                               include_tc_position))
 
     # Cache the dataset for better performance.
     dataset = dataset.cache()
@@ -492,18 +498,37 @@ def _set_shape_tc_probability(observation, prob, data_shape):
     return observation, prob
 
 
-def _filter_negative_samples(dataset, negative_samples_ratio):
-    if negative_samples_ratio is None:
+def _filter_negative_samples(dataset, negative_samples_ratio=None, other_happening_tc_ratio=None):
+    if negative_samples_ratio is None and other_happening_tc_ratio is None:
         return dataset
 
     positive_samples = dataset[dataset['TC'] == 1]
-    negative_samples = dataset[dataset['TC'] == 0]
+    samples = [positive_samples]
+    print(f'Positive samples: {len(positive_samples)}')
 
-    nb_negative_samples_to_take = int(
-        len(positive_samples) * negative_samples_ratio)
-    negative_samples = negative_samples.sample(nb_negative_samples_to_take)
+    negative_samples = dataset[(dataset['TC'] == 0) & (dataset['Is Other TC Happening'] == 0)]
+    if negative_samples_ratio is not None:
+        nb_negative_samples_to_take = int(
+            len(positive_samples) * negative_samples_ratio)
+        negative_samples = negative_samples.sample(nb_negative_samples_to_take)
+        samples.append(negative_samples)
+    else:
+        samples.append(negative_samples)
 
-    result = pd.concat([positive_samples, negative_samples])
+    print(f'Negative samples: {len(negative_samples)}')
+
+    other_happening_tc_samples = dataset[(dataset['TC'] == 0) & (dataset['Is Other TC Happening'] == 1)]
+    if other_happening_tc_ratio is not None:
+        nb_other_happening_tc_to_take = int(len(positive_samples) * other_happening_tc_ratio)
+        other_happening_tc_samples = other_happening_tc_samples.sample(nb_other_happening_tc_to_take)
+        samples.append(other_happening_tc_samples)
+    else:
+        samples.append(other_happening_tc_samples)
+
+    print(f'Other happening TC samples: {len(other_happening_tc_samples)}')
+
+    result = pd.concat(samples)
+    print(f'Total samples: {len(result)}')
     return result.sort_values(by='First Observed').reset_index()
 
 
