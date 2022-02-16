@@ -1,5 +1,17 @@
 #!/bin/env python3
 
+"""
+This script creates labels that can be used to train deep learning model to
+predict whether there will be tropical cyclones or not.
+
+Update:
+    * v2: Instead of removing observation in which TC is happening,
+          we will keep these days, but label it as negative,
+          for the model to learn the pattern where TC is about to occur.
+    * v3: Add another column "Is Other TC Happening" in the output for indicating whether a day has other TCs happening.
+    * v4: Add another column to specify the locations of other TCs happening.
+"""
+
 import argparse
 from datetime import datetime, timedelta
 import glob
@@ -146,10 +158,10 @@ def load_best_track(best_track_path) -> pd.DataFrame:
 
     return df
 
-def filter_tc_in_domain(best_track: pd.DataFrame, latitude: Tuple[int, int], longitude: Tuple[int, int]):
-    in_latitude = (best_track['Latitude'] >= latitude[0]) & (best_track['Latitude'] <= latitude[1])
-    in_longitude = (best_track['Longitude'] >= longitude[0]) & (best_track['Longitude'] <= longitude[1])
-    return best_track[in_latitude & in_longitude]
+# def filter_tc_in_domain(best_track: pd.DataFrame, latitude: Tuple[int, int], longitude: Tuple[int, int]):
+#     in_latitude = (best_track['Latitude'] > latitude[0]) & (best_track['Latitude'] < latitude[1])
+#     in_longitude = (best_track['Longitude'] > longitude[0]) & (best_track['Longitude'] < longitude[1])
+#     return best_track[in_latitude & in_longitude]
 
 
 # TODO: right now, I will just use the first row of the best track,
@@ -177,11 +189,7 @@ def extract_tropical_cyclones_from_jtwc_best_track(best_track_folder: str, latit
             'Developing Date': parse_date(tc_period.iloc[0]['YYYYMMDDHH']) if len(tc_period) > 0 else None
         }
 
-def extract_tropical_cyclones_from_ibtracs_best_track(
-        best_track_path: str,
-        latitude: Tuple[int, int],
-        longitude: Tuple[int, int],
-        basins: List[str]):
+def load_ibtracs_best_track(path, latitude_limits, longitude_limits, basins: List[str]):
     def convert_latitude(latitude):
         # FIXME:
         # Right now, just leave it as is.
@@ -195,17 +203,34 @@ def extract_tropical_cyclones_from_ibtracs_best_track(
         # with 0 - 180 belongs to East, and 180 to 360 belongs to West
         return longitude if longitude > 0 else 360 + longitude
 
+    tc_df = pd.read_csv(path)
+
+    # We only need tropical cyclones within these basins.
+    tc_df = tc_df[tc_df['BASIN'].isin([b.upper() for b in basins])]
+    tc_df['ISO_TIME'] = pd.to_datetime(tc_df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
+
+    # Convert latitude and longitude.
+    tc_df['LAT'] = tc_df['LAT'].apply(convert_latitude)
+    tc_df['LON'] = tc_df['LON'].apply(convert_longitude)
+
+    # Filter out TCs that are not in our domain of interest.
+    mask = (latitude_limits[0] < tc_df['LAT']) & (tc_df['LAT'] < latitude_limits[1])
+    mask &= (longitude_limits[0] < tc_df['LON']) & (tc_df['LON'] < longitude_limits[1])
+    tc_df = tc_df[mask]
+
+    return tc_df
+
+def extract_tropical_cyclones_from_ibtracs_best_track(best_track_path: str, latitude_limits, longitude_limits, basins: List[str]):
     def extract_tc_information(df):
         tc_period = df[df['NATURE'].isin(['TC', 'TS'])]
 
         first_row = df.iloc[0]
         last_row = df.iloc[-1]
     
-
         return {
             'Id': first_row['SID'],
-            'Latitude': convert_latitude(first_row['LAT']),
-            'Longitude': convert_longitude(first_row['LON']),
+            'Latitude': first_row['LAT'],
+            'Longitude': first_row['LON'],
             'First Observed': first_row['ISO_TIME'],
             'Last Observed': last_row['ISO_TIME'],
             'First Observed Type': first_row['NATURE'],
@@ -213,13 +238,10 @@ def extract_tropical_cyclones_from_ibtracs_best_track(
             'Developing Date': tc_period['ISO_TIME'].iloc[0] if len(tc_period) > 0 else None
         }
 
-    tc_df = pd.read_csv(best_track_path)
-
-    # We only need tropical cyclones within these basins.
-    tc_df = tc_df[tc_df['BASIN'].isin([b.upper() for b in basins])]
-    tc_df['ISO_TIME'] = pd.to_datetime(tc_df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
+    tc_df = load_ibtracs_best_track(best_track_path, latitude_limits, longitude_limits, basins)
+    print('tc df', len(tc_df))
     
-    # Then, we will group by SID so we can process each storm one by one.
+    # We will group by SID so we can process each storm one by one.
     tc = []
     for _, group in tc_df.groupby('SID'):
         tc.append(extract_tc_information(group))
@@ -239,17 +261,17 @@ def create_labels(
         if not (observation_ranges[0] <= observation_date <= observation_ranges[1]):
             continue
 
+        # Update version 3
+        # Add another column in the output for indicating whether the observation day has other TCs happening.
+        is_tc_occuring = (tc['First Observed'] <= observation_date) & (observation_date <= tc['Last Observed'])
+        is_tc_occuring = len(tc[is_tc_occuring]) > 0
+
         has_tropical_cnt = 0
 
         for leadtime in leadtimes:
             next_leadtime = observation_date + timedelta(hours=leadtime)
             has_tropical = tc['First Observed'] == next_leadtime
             has_tropical_cnt += len(tc[has_tropical])
-            # TODO: Update version 3
-            # Add another column in the output for indicating whether a day has other TCs happening.
-            is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
-            is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
-            is_tc_occuring = len(tc[is_tc_occuring]) > 0
 
             for _, tc_row in tc[has_tropical].iterrows():
                 observation_label = {
@@ -269,7 +291,7 @@ def create_labels(
                 labels.append(observation_label)
 
         if has_tropical_cnt == 0:
-            # TODO: Update version 2 for testing
+            # Update version 2 for testing
             # Instead of removing time where TC is happening,
             # we will keep these days, but label it as negative,
             # for the model to learn the pattern where TC is about to occur.
@@ -279,10 +301,6 @@ def create_labels(
             #         'TC': False,
             #         'Path': observation_filename,
             #     })
-            # TODO: Update version 3
-            # Add another column in the output for indicating whether a day has other TCs happening.
-            is_tc_occuring = (tc['First Observed'] <= observation_date) & (tc['Last Observed'] >= observation_date)
-            is_tc_occuring = len(tc[is_tc_occuring]) > 0
             labels.append({
                 'Date': observation_date,
                 'TC': False,
@@ -301,6 +319,38 @@ def create_labels(
     labels.sort_values(by='Date', inplace=True, ignore_index=True)
     return labels
 
+# Update version 4:
+# Not the best approach, but it will work! 
+def add_other_tc_happening_location(labels, best_track_from, best_track_path, latitude_limits, longitude_limits, basins):
+    assert best_track_from == 'ibtracs', 'Currently, not supporting adding other TC locations from JTWC best track!'
+    
+    tc_df = load_ibtracs_best_track(best_track_path, latitude_limits, longitude_limits, basins)
+
+    # Filter out all TCs that are not in our domain of interest.
+    # TODO: remove this??
+    # mask = (latitude_limits[0] < tc_df['LAT']) & (tc_df['LAT'] < latitude_limits[1])
+    # mask &= (longitude_limits[0] < tc_df['LON']) & (tc_df['LON'] < longitude_limits[1])
+    # tc_df = tc_df[mask]
+
+    # Loop through all day in the label,
+    # add another column for other tropical cyclones on that day.
+    other_tc_locations = []
+    for _, row in labels.iterrows():
+        if not row['Is Other TC Happening']:
+            other_tc_locations.append([])
+            continue
+
+        # Other TC happening in that day.
+        tc = tc_df[tc_df['ISO_TIME'] == row['Date']]
+        locations = [(r['LAT'], r['LON']) for _, r in tc.iterrows()]
+        # FIXME: this might happen when the storm temporarily move out of our domain of interest,
+        # comment this for now!
+        # assert len(locations) > 0, f'There may be something wrong with the script!! Check date: {row["Date"]}. Full row:\n{row}'
+        other_tc_locations.append(locations)
+
+    labels['Other TC Locations'] = other_tc_locations
+    return labels
+
 
 if __name__ == '__main__':
     args = parse_arguments()
@@ -308,9 +358,10 @@ if __name__ == '__main__':
     latitude, longitude = parse_lat_long_from_config(
         os.path.join(args.observations_dir, 'conf'))
     print(
-        f'Will create labels with storms in latitude {latitude} and longitude {longitude}.')
+        f'Will create labels with storms in latitude {latitude} and longitude {longitude} in {args.basins}.')
 
     if args.best_track_from == 'jtwc':
+        print('WARN: loading from this best track data is not maintained! Use at your own risk!!')
         best_track_year_range = get_best_track_year_range_jtwc(args.best_track, args.basins)
     else:
         best_track_year_range = get_best_track_year_range_ibtracs(args.best_track, args.basins)
@@ -329,7 +380,8 @@ if __name__ == '__main__':
             args.best_track, latitude, longitude, args.basins)
 
     # After that, filter out all tropical cyclones that are not in our domain of interest.
-    tc_df = filter_tc_in_domain(tc_df, latitude, longitude)
+    # TODO: should remove this??
+    # tc_df = filter_tc_in_domain(tc_df, latitude, longitude)
 
     # Then, base on lead time to create labels for each observation date.
     tc_df.sort_values(by='First Observed', inplace=True, ignore_index=True)
@@ -340,9 +392,17 @@ if __name__ == '__main__':
         observation_ranges=(observation_start_date, observation_end_date),
         leadtimes=args.leadtime,
     )
+    labels = add_other_tc_happening_location(
+            labels,
+            args.best_track_from,
+            args.best_track,
+            latitude_limits=latitude,
+            longitude_limits=longitude,
+            basins=args.basins)
+
     leadtime_str = '_'.join(f'{l}h' for l in args.leadtime)
     basins_str = '_'.join(f'{b}' for b in args.basins)
-    # TODO: Update version 3, please search in this file for comment what this version changes.
-    output_path = os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}_{basins_str}_v3.csv')
+    # Update version 4, please search in this file for comment what this version changes.
+    output_path = os.path.join(args.observations_dir, f'tc_{args.best_track_from}_{leadtime_str}_{basins_str}_v4.csv')
     labels.to_csv(output_path, index=False)
     print(f'DONE: output to {output_path}')
