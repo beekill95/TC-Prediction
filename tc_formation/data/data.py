@@ -6,7 +6,7 @@ import numpy as np
 import os
 import pandas as pd
 from pathlib import Path
-from tc_formation.data import utils
+import tc_formation.data.tfd_utils as tfd_utils
 import tensorflow as tf
 from typing import Union, List
 import xarray as xr
@@ -302,7 +302,7 @@ def load_data_with_tc_probability(
         dataset = dataset.shuffle(len(dataset))
 
     # Load given dataset to memory.
-    dataset = dataset.map(lambda row: utils.new_py_function(
+    dataset = dataset.map(lambda row: tfd_utils.new_py_function(
         partial(load_observation_data_with_tc_probability, subset=subset, tc_avg_radius_lat_deg=tc_avg_radius_lat_deg),
         inp=[row],
         Tout=[tf.float32, tf.float32],
@@ -404,12 +404,12 @@ def load_time_series_dataset(
         dataset = dataset.shuffle(len(dataset))
 
     # Load given dataset to memory.
-    dataset = dataset.filter(lambda row: utils.new_py_function(
+    dataset = dataset.filter(lambda row: tfd_utils.new_py_function(
         files_exist,
         inp=[row],
         Tout=bool,
         name='files_exist_filter'))
-    dataset = dataset.map(lambda row: utils.new_py_function(
+    dataset = dataset.map(lambda row: tfd_utils.new_py_function(
         partial(b_with_tc_prob, subset=subset, tc_avg_radius_lat_deg=tc_avg_radius_lat_deg),
         inp=[row],
         Tout=[tf.float32, tf.float32],

@@ -2,7 +2,8 @@ import abc
 from datetime import datetime, timedelta
 from functools import partial
 import tc_formation.data.label as label
-import tc_formation.data.utils as tcd_utils
+import tc_formation.data.tfd_utils as tfd_utils
+import tc_formation.data.utils as data_utils
 import numpy as np
 import os
 import pandas as pd
@@ -104,7 +105,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
         print('created dataset')
         
         dataset = dataset.map(
-            lambda row: tcd_utils.new_py_function(
+            lambda row: tfd_utils.new_py_function(
                     lambda row: cls._load_reanalysis_and_gt(
                             [path.decode('utf-8') for path in row['Path'].numpy()],
                             self._subset,
@@ -187,7 +188,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
             dataset = xr.open_dataset(path, engine='netcdf4')
             latitudes = dataset['lat']
             longitudes = dataset['lon']
-            dataset = extract_variables_from_dataset(dataset, subset)
+            dataset = data_utils.extract_variables_from_dataset(dataset, subset)
             datasets.append(np.expand_dims(dataset, axis=0))
         datasets = np.concatenate(datasets, axis=0)
 
@@ -284,7 +285,7 @@ class TimeSeriesTropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneD
         })
         
         dataset = dataset.map(
-            lambda row: tcd_utils.new_py_function(
+            lambda row: tfd_utils.new_py_function(
                     lambda row: cls._load_reanalysis_and_loc(
                             [path.decode('utf-8') for path in row['Path'].numpy()],
                             self._subset,
@@ -323,7 +324,7 @@ class TimeSeriesTropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneD
         datasets = []
         for path in paths:
             dataset = xr.open_dataset(path, engine='netcdf4')
-            dataset = extract_variables_from_dataset(dataset, subset)
+            dataset = data_utils.extract_variables_from_dataset(dataset, subset)
             datasets.append(np.expand_dims(dataset, axis=0))
         datasets = np.concatenate(datasets, axis=0)
 
@@ -365,27 +366,3 @@ class TropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneWithLocatio
 
         return dataset.map(remove_time_dimension)
 
-
-def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
-    data = []
-    for var in dataset.data_vars:
-        var = var.lower()
-        if subset is not None and var in subset:
-            if subset[var] is not None:
-                values = dataset[var].sel(lev=subset[var]).values
-            else:
-                continue
-        else:
-            values = dataset[var].values
-
-        # For 2D dataarray, make it 3D.
-        if len(np.shape(values)) != 3:
-            values = np.expand_dims(values, 0)
-
-        data.append(values)
-
-    # Reshape data so that it have channel_last format.
-    data = np.concatenate(data, axis=0)
-    data = np.moveaxis(data, 0, -1)
-
-    return data

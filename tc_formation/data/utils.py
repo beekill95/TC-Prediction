@@ -1,31 +1,27 @@
-import tensorflow as tf
+import numpy as np
+import xarray as xr
 
-"""
-Dealing with dictionary tensor.
-Copied from: https://github.com/tensorflow/tensorflow/issues/27679#issuecomment-522578000
-"""
-def new_py_function(func, inp, Tout, name=None):
-    def wrapped_func(*flat_inp):
-        reconstructed_inp = tf.nest.pack_sequence_as(inp, flat_inp,
-                expand_composites=True)
-        out = func(*reconstructed_inp)
-        return tf.nest.flatten(out, expand_composites=True)
+def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
+    data = []
+    for var in dataset.data_vars:
+        var = var.lower()
+        if subset is not None and var in subset:
+            if subset[var] is not None:
+                values = dataset[var].sel(lev=subset[var]).values
+            else:
+                continue
+        else:
+            values = dataset[var].values
 
-    flat_Tout = tf.nest.flatten(Tout, expand_composites=True)
-    flat_out = tf.py_function(
-            func=wrapped_func, 
-            inp=tf.nest.flatten(inp, expand_composites=True),
-            Tout=[_tensor_spec_to_dtype(v) for v in flat_Tout],
-            name=name)
-    spec_out = tf.nest.map_structure(_dtype_to_tensor_spec, Tout, 
-            expand_composites=True)
-    out = tf.nest.pack_sequence_as(spec_out, flat_out, expand_composites=True)
-    return out
+        # For 2D dataarray, make it 3D.
+        if len(np.shape(values)) != 3:
+            values = np.expand_dims(values, 0)
 
-def _dtype_to_tensor_spec(v):
-    return tf.TensorSpec(None, v) if isinstance(v, tf.dtypes.DType) else v
+        data.append(values)
 
-def _tensor_spec_to_dtype(v):
-    return v.dtype if isinstance(v, tf.TensorSpec) else v
+    # Reshape data so that it have channel_last format.
+    data = np.concatenate(data, axis=0)
+    data = np.moveaxis(data, 0, -1)
 
+    return data
 
