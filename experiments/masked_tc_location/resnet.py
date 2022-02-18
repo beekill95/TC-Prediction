@@ -107,7 +107,7 @@ model.compile(
 
 # ### Training
 
-# +
+# + tags=[]
 epochs = 150
 first_stage_history = model.fit(
     full_training,
@@ -123,8 +123,14 @@ first_stage_history = model.fit(
         #     patience=20,
         #     restore_best_weights=True),
         keras.callbacks.ModelCheckpoint(
-            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",
+            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp_best_val",
             monitor='val_f1_score',
+            mode='max',
+            save_best_only=True,
+        ),
+        keras.callbacks.ModelCheckpoint(
+            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp_best_train",
+            monitor='f1_score',
             mode='max',
             save_best_only=True,
         ),
@@ -141,5 +147,4 @@ plot.plot_training_history(first_stage_history, "First stage training")
 
 testing = data_loader.load_dataset(test_path)
 testing = testing.map(normalize_data_and_remove_other_happening_tc)
-print(f'\n**** LEAD TIME: {leadtime}')
 model.evaluate(testing)
