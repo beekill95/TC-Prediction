@@ -54,11 +54,15 @@ class TimeSeriesTropicalCycloneDataLoader:
         # Load TC dataframe.
         print('Dataframe loading.')
         tc_df = self._load_tc_csv(data_path, leadtimes)
+        print(f'DEBUG: Paths initially: {len(tc_df)}')
         print('Dataframe in memory')
         tc_df['Path'] = tc_df['Path'].apply(
                 partial(cls._add_previous_observation_data_paths, previous_times=self._previous_hours))
+        print(f'DEBUG: after adding previous observation paths: {len(tc_df)}')
         print('Add previous hours')
+        print(f'DEBUG: before removing invalid paths: {len(tc_df)}')
         tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
+        print(f'DEBUG: after removing invalid paths: {len(tc_df)}')
 
         if nonTCRatio is not None:
             nb_nonTC = int(round(len(tc_df[tc_df['TC']]) * nonTCRatio))

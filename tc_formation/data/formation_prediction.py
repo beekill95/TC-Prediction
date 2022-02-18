@@ -68,8 +68,24 @@ class TimeSeriesTCFormationDataLoader(TimeSeriesTropicalCycloneDataLoader):
         print('DONE creating dataset.')
         return dataset
 
-    def load_single_data(self, data_path):
-        raise Exception('Not Implemented!')
+    def load_single_data(self, data_path: str, has_tc: bool, other_tc_locations: List[Tuple[float, float]]):
+        cls = TimeSeriesTCFormationDataLoader
+        data = cls._load_reanalysis_gt_and_mask(
+            [data_path],
+            self._subset,
+            has_tc=has_tc,
+            data_shape=self._data_shape,
+            produce_mask=self._produce_other_tc_locations_mask,
+            other_tc_locations=other_tc_locations,
+            tc_avg_radius_lat_deg=self._tc_avg_radius_lat_deg,
+            clip_threshold=self._clip_threshold,
+        )
+
+        if not self._produce_other_tc_locations_mask:
+            print('Remove other tc locations mask from output ...')
+            data = data[:-1]
+
+        return data
 
     @classmethod
     def _load_reanalysis_gt_and_mask(
@@ -122,7 +138,7 @@ class TimeSeriesTCFormationDataLoader(TimeSeriesTropicalCycloneDataLoader):
         if not produce_mask:
             return np.ones_like(data_shape[:-1], dtype=np.float64)
 
-        mask = np.zeros(data_shape[:-1], dtype=np.float64)
+        has_other_tc_mask = np.zeros(data_shape[:-1], dtype=np.float64)
         xx, yy = np.meshgrid(data_longitudes, data_latitudes)
         
         for lat, lon in other_tc_locations:
@@ -133,9 +149,9 @@ class TimeSeriesTCFormationDataLoader(TimeSeriesTropicalCycloneDataLoader):
             prob = np.exp(-(x_diff * x_diff + y_diff * y_diff) / (2 * tc_avg_radius_lat_deg ** 2))
             prob[prob < clip_threshold] = 0
 
-            mask += prob
+            has_other_tc_mask += prob
 
-        mask = np.where(mask >= clip_threshold, 1.0, 0.0)
+        mask = np.where(has_other_tc_mask >= clip_threshold, 0.0, 1.0)
         return np.expand_dims(mask, axis=-1)
 
     @classmethod
@@ -166,8 +182,12 @@ class TCFormationPredictionDataLoader(TimeSeriesTCFormationDataLoader):
 
         return dataset
 
+    def load_single_data(self, data_path: str, has_tc: bool, other_tc_locations: List[Tuple[float, float]]):
+        cls = TCFormationPredictionDataLoader
+        data = super().load_single_data(data_path, has_tc, other_tc_locations)
+        return cls._remove_time_axis(*data)
+
     @classmethod
     def _remove_time_axis(cls, X, *args):
-        print(args)
         X = tf.squeeze(X, axis=0)
         return X, *args
