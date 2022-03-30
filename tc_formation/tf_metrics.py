@@ -69,10 +69,12 @@ class NthBinaryAccuracy(NthClassificationMixin, tf.metrics.BinaryAccuracy):
 
 
 class CustomF1Score(tf.keras.metrics.Metric):
-    def __init__(self, name='f1_score', class_id=None, **kwargs):
+    def __init__(self, name='f1_score', class_id=None, from_logits=False, **kwargs):
         super().__init__(name=name, **kwargs)
-        self.precision_fn = tf.metrics.Precision(thresholds=0.5, class_id=class_id)
-        self.recall_fn = tf.metrics.Recall(thresholds=0.5, class_id=class_id)
+        # self.precision_fn = tf.metrics.Precision(thresholds=0.5, class_id=class_id, **metric_kwargs)
+        # self.recall_fn = tf.metrics.Recall(thresholds=0.5, class_id=class_id, **metric_kwargs)
+        self.precision_fn = PrecisionScore(thresholds=0.5, class_id=class_id, from_logits=from_logits)
+        self.recall_fn = RecallScore(thresholds=0.5, class_id=class_id, from_logits=from_logits)
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         self.precision_fn.update_state(y_true, y_pred)

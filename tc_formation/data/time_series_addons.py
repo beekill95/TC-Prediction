@@ -1,6 +1,6 @@
+import pandas as pd
 import tensorflow as tf
 from tc_formation.data.time_series import TimeSeriesTropicalCycloneDataLoader, TimeSeriesTropicalCycloneWithGridProbabilityDataLoader
-from typing import List
 
 
 class TimeSeriesDataLoaderAddon(TimeSeriesTropicalCycloneDataLoader):
@@ -32,3 +32,27 @@ class WithPriorTCProbAddon(TimeSeriesDataLoaderAddon):
         prior_prob = tf.cast(prior_prob, dtype=tf.float32)
 
         return X, {grid_prob_name: y, tc_prob_prior_name: prior_prob}
+
+
+class SingleTimeStepMixin(TimeSeriesTropicalCycloneDataLoader):
+    def __init__(self, *args, **kwargs):
+        super().__init__(previous_hours=[], *args, **kwargs)
+
+    def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
+        cls = SingleTimeStepMixin
+        dataset = super()._process_to_dataset(tc_df)
+
+        # Remove the time axis.
+        dataset = dataset.map(lambda d, *args: cls._remove_time_axis(d, *args))
+
+        return dataset
+
+    def load_single_data(self, data_path, *args, **kwargs):
+        cls = SingleTimeStepMixin
+        data = super().load_single_data([data_path], *args, **kwargs)
+        return cls._remove_time_axis(*data)
+
+    @classmethod
+    def _remove_time_axis(cls, X, *args):
+        X = tf.squeeze(X, axis=0)
+        return X, *args

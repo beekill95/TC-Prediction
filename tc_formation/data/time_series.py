@@ -48,30 +48,31 @@ class TimeSeriesTropicalCycloneDataLoader:
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         pass
 
-    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None):
+    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None, other_happening_tc_ratio=None):
         cls = TimeSeriesTropicalCycloneDataLoader
 
         # Load TC dataframe.
         print('Dataframe loading.')
         tc_df = self._load_tc_csv(data_path, leadtimes)
-        print(f'DEBUG: Paths initially: {len(tc_df)}')
         print('Dataframe in memory')
         tc_df['Path'] = tc_df['Path'].apply(
                 partial(cls._add_previous_observation_data_paths, previous_times=self._previous_hours))
-        print(f'DEBUG: after adding previous observation paths: {len(tc_df)}')
         print('Add previous hours')
-        print(f'DEBUG: before removing invalid paths: {len(tc_df)}')
         tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
-        print(f'DEBUG: after removing invalid paths: {len(tc_df)}')
-
-        if nonTCRatio is not None:
-            nb_nonTC = int(round(len(tc_df[tc_df['TC']]) * nonTCRatio))
-            with_tc_df = tc_df[tc_df['TC']]
-            without_tc_df = tc_df[~tc_df['TC']].sample(nb_nonTC)
-            tc_df = pd.concat([with_tc_df, without_tc_df], axis=0)
-            tc_df.sort_values('Date', axis=0, inplace=True)
-
         print('Check previous hours valid')
+
+        tc_df = data_utils.filter_negative_samples(
+                tc_df,
+                negative_samples_ratio=nonTCRatio,
+                other_happening_tc_ratio=other_happening_tc_ratio)
+
+        # if nonTCRatio is not None:
+        #     nb_nonTC = int(round(len(tc_df[tc_df['TC']]) * nonTCRatio))
+        #     with_tc_df = tc_df[tc_df['TC']]
+        #     without_tc_df = tc_df[~tc_df['TC']].sample(nb_nonTC)
+        #     tc_df = pd.concat([with_tc_df, without_tc_df], axis=0)
+        #     tc_df.sort_values('Date', axis=0, inplace=True)
+
         print('Dataframe loaded')
 
         # Convert to tf dataset.
