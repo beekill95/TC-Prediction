@@ -41,9 +41,10 @@ obs_tc.sample(n=10)
 # ## Observation with Tropical Cyclone
 
 row_with_tc = obs_tc.iloc[2919]
+# row_with_tc = obs_tc[obs_tc['Path'] == 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/fnl_20191006_06_00.nc'].iloc[0]
 row_with_tc.Path
 
-obs = xr.load_dataset(row_with_tc['Path'])
+obs = xr.load_dataset(row_with_tc['Path'], engine='netcdf4')
 obs
 
 # +
@@ -87,6 +88,8 @@ ax.set_title('V-wind at 925mb')
 plt_obs.plot_variablef(dataset=centered_tc, variable='vgrdprs', pressure_level=925, ax=ax)
 
 # +
+import tc_formation.vortex_removal.vortex_removal as vr # noqa
+
 u_wind_925 = obs.vgrdprs.sel(lev=925).values
 tc_loc_converted = [tc_loc[0] - np.min(obs.lat).values,
                     tc_loc[1] - np.min(obs.lon).values]
@@ -103,6 +106,8 @@ ax = axes[1]
 cs = ax.contourf(field, cmap='rainbow')
 ax.set_title('TC removed field')
 fig.colorbar(cs, ax=ax)
+
+print(np.all(field == u_wind_925))
 # -
 
 # Reassign values into original observation

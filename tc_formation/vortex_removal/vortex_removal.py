@@ -9,7 +9,9 @@ def remove_vortex_ds(dataset: xr.Dataset, centers: np.ndarray, radius: float) ->
     minlon = np.min(dataset.lon)
 
     # Translate to pixel coordinates, (0, 0) at top-left corner.
+    print(centers)
     centers = np.asarray(centers) - np.asarray([minlat, minlon])
+    # print('after', centers)
 
     for variable, data in dataset.data_vars.items():
         data_values = data.values
@@ -49,14 +51,17 @@ def remove_vortex(field: np.ndarray, centers: np.ndarray, radius: float) -> np.n
     field = np.copy(field)
     for center in centers:
         x_min, x_max, y_min, y_max = _extract_centered_region_coords(field, center, radius)
-        tc_field = field[y_min:y_max, x_min:x_max]
+        # print(x_min, x_max, y_min, y_max)
+        tc_field = field[x_min:x_max, y_min:y_max]
         basic_field = _obtain_basic_field(tc_field)
+
+        # print('inside', np.all(tc_field == basic_field))
 
         # We further assume that within this region,
         # most of the disturbances are from the TC.
         # Thus, the basic field is enough,
         # no need to further extract the non-hurricane disturbance field.
-        field[y_min:y_max, x_min:x_max] = basic_field
+        field[x_min:x_max, y_min:y_max] = basic_field
 
         # TODO: apply further smoothing the smooth the edges of the basic field.
 
@@ -94,7 +99,12 @@ def _obtain_basic_field(tc_field: np.ndarray) -> np.ndarray:
     def apply_filter_first_dim(field: np.ndarray, m: float) -> np.ndarray:
         """This will mutate the field parameter."""
         K = .5 / (1 - np.cos(2 * np.pi / m))
+        # original = field
+        # print('Original', original)
+        # field = np.copy(field)
         field[1:-1] += K * (field[2:] + field[:-2] - 2 * field[1:-1])
+        # print('Field', field)
+        # print('Inside apply', np.all(original == field))
         return field
 
     # In the paper,
@@ -104,11 +114,13 @@ def _obtain_basic_field(tc_field: np.ndarray) -> np.ndarray:
     m_values = [2, 3, 4, 2, 5, 6, 7, 2, 8, 9, 2]
     tc_field = np.copy(_transpose(tc_field))
     for m in m_values:
+        # print('zonal', m)
         tc_field = apply_filter_first_dim(tc_field, m)
 
     # 2. Iteratively smoothing along the meridional direction.
     tc_field = _transpose(tc_field)
     for m in m_values:
+        # print('meridional', m)
         tc_field = apply_filter_first_dim(tc_field, m)
 
     return tc_field
