@@ -61,8 +61,8 @@ model.summary()
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    # loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+    # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
@@ -81,18 +81,20 @@ full_training = data.load_data_v1(
     subset=subset,
     group_same_observations=False,
 )
-# downsampled_training = data.load_data(
-#     train_path,
-#     data_shape=data_shape,
-#     batch_size=64,
-#     shuffle=True,
-#     subset=subset,
-#     negative_samples_ratio=1)
+downsampled_training = data.load_data_v1(
+    train_path,
+    data_shape=data_shape,
+    batch_size=64,
+    shuffle=True,
+    subset=subset,
+    negative_samples_ratio=1,
+)
 validation = data.load_data_v1(
     val_path,
     data_shape=data_shape,
     subset=subset,
     group_same_observations=True,
+    negative_samples_ratio=1,
 )
 
 features = full_training.map(lambda X, _: X)
@@ -105,7 +107,7 @@ def normalize_data(x, y):
 
 
 full_training = full_training.map(normalize_data)
-# downsampled_training = downsampled_training.map(normalize_data)
+downsampled_training = downsampled_training.map(normalize_data)
 validation = validation.map(normalize_data)
 # -
 
@@ -116,8 +118,8 @@ validation = validation.map(normalize_data)
 # +
 epochs = 150
 first_stage_history = model.fit(
-    # downsampled_training,
-    full_training,
+    downsampled_training,
+    # full_training,
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 10., 0: 1.},
@@ -158,3 +160,9 @@ model.evaluate(
             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
     ])
+
+# ## Integrated Gradient
+#
+# To visualize what the ML model has learned.
+
+

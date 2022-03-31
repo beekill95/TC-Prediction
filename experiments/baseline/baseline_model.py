@@ -20,7 +20,7 @@ sys.path.append('../..') # noqa
 import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
-import ten
+import tensorflow_addons as tfa
 from tensorflow.keras.layers.experimental import preprocessing
 from tc_formation import data, tf_metrics as tfm, plot
 from datetime import datetime
@@ -69,7 +69,8 @@ model.summary()
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    #loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
@@ -112,14 +113,14 @@ train_history = model.fit(
     full_training,
     epochs=epochs,
     validation_data=validation,
-    class_weight={1: 10., 0: 1.},
+    class_weight={1: 1., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
             monitor='val_f1_score',
             mode='max',
             verbose=1,
-            patience=20,
+            patience=50,
             restore_best_weights=True),
         keras.callbacks.ModelCheckpoint(
             filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",

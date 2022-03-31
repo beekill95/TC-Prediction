@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.13.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -33,14 +33,14 @@ import xarray as xr
 
 # Path to the model's checkpoint that we want to analyze the output.
 
-model_path = '../outputs/baseline_resnet_multileadtime_2022_Jan_16_10_26_1st_ckp/'
+model_path = '../attention_models/outputs/attention_resnet_2021_Nov_06_16_35_1st_ckp/'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()
 
 # Path to the data that we want to inspect.
 
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 train_path = f'{data_path}_train'
 val_path = f'{data_path}_val'
 test_path = f'{data_path}_test'
@@ -53,7 +53,7 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 161, 13)
+data_shape = (41, 181, 13)
 
 # Load the whole dataset to create a layer to normalize data.
 
@@ -122,104 +122,8 @@ with pd.option_context("display.min_rows", None, "display.max_rows", None,
                        "display.max_columns", None, 'display.max_colwidth', None):
     display(difference[difference['TC'] == 1])
 
-# Create a model with intermediate outputs so we can visualize what the model
-# uses for predicting these values.
-
-blocks = ['conv2_block3_out', 'conv3_block4_out', 'conv4_block6_out', 'conv5_block3_out']
-intermediate_outputs = [model.get_layer(block).output for block in blocks]
-intermediate_model = keras.Model(inputs=model.inputs, outputs=intermediate_outputs)
-
 # After different results given by the models,
 # we will now look at how those models make prediction.
-#
-# ## Analyzing True Positive
-
-true_positives = matched[matched['TC'] == 1].sample(10)
-
-# +
-true_positive_ds = []
-
-for _, row in true_positives.iterrows():
-    ds = xr.open_dataset(row['Path'])
-    true_positive_ds.append(data.extract_variables_from_dataset(ds, subset))
-
-    fig, axs = plt.subplots(nrows=2, figsize=(30, 16))
-
-    fig.suptitle(
-        f'''True Positive: Wind field observed on {row["Observation"]}
-        There will be tropical cyclones at {row["Latitude"]} - {row["Longitude"]} on {row["Genesis"]}''')
-
-    axs[0].set_title('Wind field at 800mb and sea surface temperature')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='tmpsfc',
-        ax=axs[0],
-        contourf_kwargs=dict(levels=np.arange(270, 310, 2)))
-    plt_obs.plot_wind(dataset=ds, pressure_level=800, ax=axs[0])
-
-    axs[1].set_title('Wind field at 200mb and RH at 750mb')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='rhprs',
-        pressure_level=750,
-        ax=axs[1],
-        contourf_kwargs=dict(levels=np.arange(0, 110, 5)))
-    plt_obs.plot_wind(dataset=ds, pressure_level=200, ax=axs[1])
-
-    fig.tight_layout()
-    display(fig)
-    plt.close(fig)
-
-# +
-true_positive_intermidate_outputs = intermediate_model.predict(np.asarray(true_positive_ds))
-
-for i_image, row in true_positives.reset_index().iterrows():
-    print(row['Observation'])
-    
-    for feature_map, block in zip(true_positive_intermidate_outputs, blocks):
-        k = feature_map.shape[-1]
-        size = feature_map.shape[1]
-        
-        average = np.sum(feature_map[i_image], axis=-1)
-        average -= average.mean()
-        average /= average.std()
-        average *= 64
-        average += 128
-        average = np.clip(average, 0, 255).astype('uint8')
-        
-        fig, ax = plt.subplots()
-        ax.imshow(average, aspect='auto')
-        fig.tight_layout()
-        display(fig)
-        plt.close(fig)
-        
-        print(feature_map.shape)
-        nb = 20
-        image_belt = []
-        for i in range(nb):
-            feature_im = feature_map[i_image, :, :, i]
-            feature_im -= feature_im.mean()
-            feature_im /= feature_im.std()
-            feature_im *= 64
-            feature_im += 128
-            feature_im = np.clip(feature_im, 0, 255).astype('uint8')
-            image_belt.append(feature_im)
-
-        image_belt = np.concatenate(image_belt, axis=1)
-        print(np.shape(image_belt))
-        
-        fig, ax = plt.subplots(figsize=(20 * nb, 10))
-        ax.set_title(f'{block} of observation {row["Observation"]}')
-        cs = ax.imshow(image_belt, aspect='auto')
-        plt.colorbar(cs)
-        
-        fig.tight_layout()
-        display(fig)
-        plt.close(fig)
-
-# -
-
-# Then, we probably want to peak into the ML model to see which cyclones does it look at.
 #
 # ## Analyzing False Positive
 #
@@ -241,28 +145,18 @@ for _, row in false_positives.iterrows():
         f'False Positive: Wind field observed on {row["Observation"]}')
 
     axs[0].set_title('Wind field at 800mb and sea surface temperature')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='tmpsfc',
-        ax=axs[0],
-        contourf_kwargs=dict(levels=np.arange(270, 310, 2)))
+    plt_obs.plot_variable(dataset=ds, variable='tmpsfc', ax=axs[0])
     plt_obs.plot_wind(dataset=ds, pressure_level=800, ax=axs[0])
 
     axs[1].set_title('Wind field at 200mb and RH at 750mb')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='rhprs',
-        pressure_level=750,
-        ax=axs[1],
-        contourf_kwargs=dict(levels=np.arange(0, 110, 5)))
+    plt_obs.plot_variable(dataset=ds, variable='rhprs',
+                          pressure_level=750, ax=axs[1])
     plt_obs.plot_wind(dataset=ds, pressure_level=200, ax=axs[1])
 
     fig.tight_layout()
     display(fig)
     plt.close(fig)
 # -
-
-# Then, we probably want to peak into the ML model to see which cyclones does it look at.
 
 # ## Analyzing False Negative
 #
@@ -281,23 +175,15 @@ for _, row in false_negatives.iterrows():
 
     fig.suptitle(
         f'''False Negative: Wind field observed on {row["Observation"]},
-            there will be TC at {row["Latitude"]} lat, {row["Longitude"]} lon  on {row["Genesis"]}''')
+            there will be TC at {row["Latitude"]} lat, {row["Longitude"]} lon''')
 
     axs[0].set_title('Wind field at 800mb and sea surface temperature')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='tmpsfc',
-        ax=axs[0],
-        contourf_kwargs=dict(levels=np.arange(270, 310, 2)))
+    plt_obs.plot_variable(dataset=ds, variable='tmpsfc', ax=axs[0])
     plt_obs.plot_wind(dataset=ds, pressure_level=800, ax=axs[0])
 
     axs[1].set_title('Wind field at 200mb and RH at 750mb')
-    plt_obs.plot_variable(
-        dataset=ds,
-        variable='rhprs',
-        pressure_level=750,
-        ax=axs[1],
-        contourf_kwargs=dict(levels=np.arange(0, 110, 5)))
+    plt_obs.plot_variable(dataset=ds, variable='rhprs',
+                          pressure_level=750, ax=axs[1])
     plt_obs.plot_wind(dataset=ds, pressure_level=200, ax=axs[1])
 
     fig.tight_layout()

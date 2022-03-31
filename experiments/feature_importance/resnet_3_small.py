@@ -15,6 +15,7 @@
 
 # %cd ../..
 
+# +
 from tc_formation.data import data
 import tc_formation.models.resnet as resnet
 import tc_formation.tf_metrics as tfm
@@ -25,13 +26,17 @@ import tensorflow_addons as tfa
 from datetime import datetime
 import numpy as np
 
-# # Feature Importance of ResNet 18 on Multiple Leadtime and Large Domain
+gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpu_devices[0], True)
+# -
+
+# # Feature Importance of ResNet 18 on Multiple Leadtime and Small Domain
 
 # ## Data
 
 # Specify location of the data, as well as data shape.
 
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/nolabels_wp_only_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -44,7 +49,7 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 161, 13)
+data_shape = (41, 81, 13)
 
 # Load data into memory.
 
@@ -201,11 +206,25 @@ selector2 = SequentialFeatureSelection(model_fn=build_resnet_model, data_shape=d
 selector2.fit(full_training, validation)
 
 print('Best proposal: ', selector2.best_proposal(), ' with score: ', selector2.best_proposal_score())
+
+# +
+selector3 = SequentialFeatureSelection(model_fn=build_resnet_model, data_shape=data_shape, nb_features_to_select=3)
+selector3.fit(full_training, validation)
+
+print('Best proposal: ', selector3.best_proposal(), ' with score: ', selector3.best_proposal_score())
+
+# +
+selector4 = SequentialFeatureSelection(model_fn=build_resnet_model, data_shape=data_shape, nb_features_to_select=3)
+selector4.fit(full_training, validation)
+
+print('Best proposal: ', selector4.best_proposal(), ' with score: ', selector4.best_proposal_score())
 # -
 
 print('Best proposal: ', selector.best_proposal(), ' with score: ', selector.best_proposal_score())
 print('Best proposal: ', selector1.best_proposal(), ' with score: ', selector1.best_proposal_score())
 print('Best proposal: ', selector2.best_proposal(), ' with score: ', selector2.best_proposal_score())
+print('Best proposal: ', selector3.best_proposal(), ' with score: ', selector3.best_proposal_score())
+print('Best proposal: ', selector4.best_proposal(), ' with score: ', selector4.best_proposal_score())
 
 # * absvprs [900, 750]
 # * capesfc

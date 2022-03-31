@@ -28,7 +28,7 @@ import tc_formation.data.data as tcdata
 
 # ## Model Loading
 
-model_path = 'outputs/baseline_resnet_single_leadtime_2022_Jan_24_10_42_1st_ckp/'
+model_path = 'outputs/baseline_has_tc_multileadtime_2022_Feb_09_12_02_1st_ckp/'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()

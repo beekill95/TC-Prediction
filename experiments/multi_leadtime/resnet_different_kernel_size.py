@@ -104,7 +104,7 @@ model = resnet.ConfigurableResNet18v2(
     #weights=None,
     include_top=True,
     kernel_size=3,
-    starting_channels=128,
+    starting_channels=512,
     classes=1,
     classifier_activation=None,)
 model.summary()

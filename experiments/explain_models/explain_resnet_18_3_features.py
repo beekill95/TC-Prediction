@@ -29,12 +29,14 @@ import tc_formation.data.data as tcdata
 # ## Model Loading
 
 model_path = 'outputs/baseline_resnet_single_leadtime_2022_Jan_24_10_42_1st_ckp/'
+model_path = 'outputs/baseline_resnet_multileadtime_3_features_2022_Feb_02_11_34_1st_ckp/'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()
 
 # ## Data Loading
 
+# +
 data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
@@ -49,6 +51,21 @@ subset = dict(
     vgrdprs=[800, 200],
 )
 data_shape = (41, 161, 13)
+
+# From Feature Importance - 3 features: capesfc, ugrdprs @ 800, vgrdprs @ 800
+subset = dict(
+    absvprs=None,
+    rhprs=None,
+    tmpprs=None,
+    hgtprs=None,
+    vvelprs=None,
+    ugrdprs=[800],
+    vgrdprs=[800],
+    # capesfc=None,
+    tmpsfc=None
+)
+data_shape = (41, 161, 3)
+# -
 
 full_training = tcdata.load_data_v1(
     train_path,

@@ -18,7 +18,7 @@
 from tc_formation import plot
 from tc_formation.data import formation_prediction as data
 import tc_formation.models.layers
-import tc_formation.models.resnet as resnet
+import tc_formation.models.baseline as baseline
 import tc_formation.tf_metrics as tfm
 import tensorflow.keras as keras
 import tensorflow as tf
@@ -26,7 +26,7 @@ from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
 
-# # Use ResNet with Masked TC Location
+# # Use My Baseline with Masked TC Location
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
@@ -34,7 +34,7 @@ from datetime import datetime
 # ## Experiment Specifications
 
 # +
-exp_name = 'resnet_masked_tc_location'
+exp_name = 'my_baseline_masked_tc_location'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h_WP_EP_v4.csv'
 train_path = data_path.replace('.csv', '_train.csv')
@@ -97,11 +97,12 @@ validation = validation.map(normalize_data_and_remove_other_happening_tc)
 # ## Model
 
 # + tags=[]
-model = resnet.ResNet18v2(
+model = baseline.HasTCBaselineModel(
     input_shape=data_shape,
-    include_top=True,
     classes=1,
-    classifier_activation=None,)
+    output_activation=None,
+    name='my_baseline',
+)
 model.summary()
 # -
 
@@ -132,12 +133,12 @@ first_stage_history = model.fit(
     #class_weight={1: 3., 0: 1.},
     shuffle=True,
     callbacks=[
-        # keras.callbacks.EarlyStopping(
-        #     monitor='val_f1_score',
-        #     mode='max',
-        #     verbose=1,
-        #     patience=20,
-        #     restore_best_weights=True),
+        keras.callbacks.EarlyStopping(
+            monitor='val_f1_score',
+            mode='max',
+            verbose=1,
+            patience=30,
+            restore_best_weights=True),
         keras.callbacks.ModelCheckpoint(
             filepath=f"outputs/{exp_name}_{runtime}_1st_ckp_best_val",
             monitor='val_f1_score',

@@ -28,14 +28,14 @@ import tc_formation.data.data as tcdata
 
 # ## Model Loading
 
-model_path = 'outputs/baseline_resnet_single_leadtime_2022_Jan_24_10_42_1st_ckp/'
+model_path = 'outputs/baseline_resnet_vortex_removed_2022_Mar_31_10_26_1st_ckp/'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()
 
 # ## Data Loading
 
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v4.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -181,6 +181,7 @@ def plot_samples(true_positives_df):
         print(row['Path'], row['Pred Prob'], row['Predicted'])
         print('First Observed: ', row['First Observed'])
         print(f'Location: {row["Latitude"]} lat - {row["Longitude"]} lon')
+        print(f'Other TC Locations: {row["Other TC Locations"]}')
 
         # Load data, predict and calculate integrated gradient.
         X = tcdata.extract_variables_from_dataset(ds, subset)

@@ -57,14 +57,12 @@ subset = dict(
 )
 data_shape = (41, 161, 13)
 
-# + tags=[]
 model = resnet.ResNet18(
     input_shape=data_shape,
     include_top=True,
     classes=1,
     classifier_activation=None,)
 model.summary()
-# -
 
 # Build the model using BinaryCrossentropy loss
 

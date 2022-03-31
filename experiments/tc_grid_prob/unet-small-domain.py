@@ -27,14 +27,14 @@ from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 import xarray as xr
 
-# # Predict TC Formation using Grid Probability for WP only
+# # Predict TC Formation using Grid Probability
 
 # Configurations to run for this experiment.
 
 # +
-exp_name = 'tc_grid_prob_unet_wp'
+exp_name = 'tc_grid_prob_unet_small_domain'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h_wp.csv'
+data_path = 'data/nolabels_wp_only_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -47,7 +47,7 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 161, 13)
+data_shape = (41, 81, 13)
 # subset = dict(
 #     absvprs=None, # [900, 750],
 #     rhprs=None, # [750],
@@ -74,7 +74,6 @@ data_shape = (41, 161, 13)
 # data_shape = (41, 161, 135)
 
 use_softmax = False
-nonTCRatio = 1
 # -
 
 # Create U-Net model with normalization layer.
@@ -105,8 +104,9 @@ training = data_loader.load_dataset(
     batch_size=128,
     leadtimes=12,
     shuffle=True,
-    nonTCRatio=nonTCRatio)
-validation = data_loader.load_dataset(val_path, leadtimes=12, batch_size=128, nonTCRatio=None)
+    nonTCRatio=3,
+)
+validation = data_loader.load_dataset(val_path, leadtimes=12, batch_size=128)
 
 # After that, we will initialize the normalization layer,
 # and compile the model.
@@ -144,10 +144,9 @@ model.compile(
     optimizer='adam',
     # loss=tf.keras.losses.BinaryCrossentropy(),
     # loss=combine_loss_funcs(hard_negative_mined_sigmoid_focal_loss, dice_loss),
-    # loss=dice_loss,
+    loss=dice_loss,
     # loss=hard_negative_mined_sigmoid_focal_loss,
-    loss=hard_negative_mined_binary_crossentropy_loss,
-    # loss=tfa.losses.SigmoidFocalCrossEntropy(),
+    # loss=hard_negative_mined_binary_crossentropy_loss,
     metrics=[
         'binary_accuracy',
         keras.metrics.Recall(name='recall', class_id=1 if use_softmax else None),
@@ -162,7 +161,8 @@ model.compile(
 
 # Finally, we can train the model!
 
-epochs = 300
+# + tags=[]
+epochs = 500
 model.fit(
     training,
     epochs=epochs,
@@ -172,22 +172,28 @@ model.fit(
         keras.callbacks.TensorBoard(
             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
+        keras.callbacks.ModelCheckpoint(
+            filepath=f"outputs/{exp_name}_{runtime}_1st_ckp_best_train",
+            monitor='IoU',
+            mode='max',
+            save_best_only=True,
+        ),
         keras.callbacks.EarlyStopping(
             monitor='val_IoU',
             mode='max',
             verbose=1,
-            patience=50,
+            patience=100,
             restore_best_weights=True
         ),
     ]
 )
+# -
 
-for leadtime in [12]:
+for leadtime in [6, 12, 18, 24, 30, 36, 42, 48]:
     testing = data_loader.load_dataset(
         test_path,
         leadtimes=leadtime,
-        batch_size=128,
-        nonTCRatio=None,
+        batch_size=128
     )
     print(f'\n**** LEAD TIME: {leadtime}')
     model.evaluate(testing)
@@ -200,6 +206,7 @@ from mpl_toolkits.basemap import Basemap # noqa
 import matplotlib.patches as patches # noqa
 import numpy as np # noqa
 import pandas as pd # noqa
+import tc_formation.data.label as label # noqa
 from tc_formation.data.data import load_observation_data_with_tc_probability # noqa
 from tc_formation.plots import decorators, observations as plt_obs # noqa
 
@@ -216,41 +223,70 @@ def plot_tc_occurence_prob(
     
 @decorators._with_axes
 @decorators._with_basemap
+def plot_SST(dataset, basemap=None, ax=None, **kwargs):
+    lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
+    cs = basemap.contour(lats, longs, dataset['tmpsfc'], levels=np.arange(270, 310, 2), cmap='Reds')
+    ax.clabel(cs, inline=True, fontsize=10)
+    
+@decorators._with_axes
+@decorators._with_basemap
 def draw_rectangles(dataset: xr.Dataset, rectangles, basemap: Basemap = None, ax: plt.Axes = None, **kwargs):
     for rec in rectangles:
         min_lat = np.min(dataset['lat'])
         min_lon = np.min(dataset['lon'])
-        rec = patches.Rectangle((min_lon + rec[0], min_lat + rec[1]), rec[2], rec[3], edgecolor='b', fill=False)
+        rec = patches.Rectangle((min_lon + rec[0], min_lat + rec[1]), rec[2], rec[3], fill=False, **kwargs)
         ax.add_patch(rec)
+    
+def plot_stuffs(ds, pressure_level, ax):
+    # Plot Relative Humidity
+    plt_obs.plot_variable(
+        dataset=ds,
+        variable='rhprs',
+        pressure_level=pressure_level,
+        cmap='Blues',
+        ax=ax,
+        contourf_kwargs=dict(levels=np.arange(0, 110, 5)))
+    
+    # Plot wind field.
+    plt_obs.plot_wind(dataset=ds, pressure_level=pressure_level, ax=ax, skip=4)
+
+    # Plot SST
+    plot_SST(dataset=ds, ax=ax)
 
 def plot_groundtruth_and_prediction(tc_df):
     iou = bb.BBoxesIoUMetric(iou_threshold=0.2)
 
-    for _, row in tc_df.iterrows():   
-        print("=====\n=====\n====\n")
+    for _, row in tc_df.iterrows():
         dataset = xr.open_dataset(row['Path'])
         data, groundtruth = data_loader.load_single_data(row)
-
+        gt_boxes = bb.extract_bounding_boxes(groundtruth)
+        print('gt boxes', gt_boxes)
+        
         prediction = model.predict([data])[0]
-        boxes = bb.extract_bounding_boxes(prediction)
-        print(boxes)
+        pred_boxes = bb.extract_bounding_boxes(prediction)
+        print('pred boxes', pred_boxes)
         
         iou.update_state([tf.cast(groundtruth, dtype=tf.float32)], [tf.cast(prediction, dtype=tf.float32)])
         print(f'IoU: {iou.result()}')
         iou.reset_states()
-
+        
         if use_softmax:
             prediction = np.argmax(prediction, axis=-1)
         
-        fig, ax = plt.subplots(nrows=2, figsize=(15, 9))
-        plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(groundtruth), ax=ax[0])
-        plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[0])
-        ax[0].set_title('Groundtruth')
+        fig, ax = plt.subplots(nrows=2, figsize=(30, 18))
+        # plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(groundtruth), ax=ax[0])
+        # plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[0])
+        plot_stuffs(dataset, pressure_level=850, ax=ax[0])
+        draw_rectangles(dataset=dataset, rectangles=gt_boxes, ax=ax[0], edgecolor='lime', linewidth=4)
+        draw_rectangles(dataset=dataset, rectangles=pred_boxes, ax=ax[0], edgecolor='coral', linewidth=4)
+        ax[0].set_title('SST, RH and Wind Field @ 850mb.')
 
-        plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(prediction), ax=ax[1])
-        #plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[1])
-        draw_rectangles(dataset=dataset, rectangles=boxes, ax=ax[1])
-        ax[1].set_title('Prediction')
+        # plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(prediction), ax=ax[1])
+        # plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[1])
+        plot_stuffs(dataset, pressure_level=500, ax=ax[1])
+        draw_rectangles(dataset=dataset, rectangles=gt_boxes, ax=ax[1], edgecolor='lime', linewidth=4)
+        draw_rectangles(dataset=dataset, rectangles=pred_boxes, ax=ax[1], edgecolor='coral', linewidth=4)
+        ax[1].set_title('SST, RH and Wind Field @ 500mb.')
         
         if row['TC']:
             title = f"""Prediction on date {row['Date']}
@@ -261,6 +297,8 @@ def plot_groundtruth_and_prediction(tc_df):
         fig.tight_layout()
         display(fig)
         plt.close(fig)
+        
+        print("=====\n=====\n====\n")
 
 
 # -
@@ -268,21 +306,43 @@ def plot_groundtruth_and_prediction(tc_df):
 # ## Train with TC
 
 train_df = pd.read_csv(train_path)
-train_with_tc_df = train_df[train_df['TC']].sample(5)
+train_with_tc_df = train_df[train_df['TC']].sample(2)
 plot_groundtruth_and_prediction(train_with_tc_df)
 
-# # Train without TC
-
-train_without_tc_df = train_df[~train_df['TC']].sample(5)
-plot_groundtruth_and_prediction(train_without_tc_df)
-
-# ## Test With TC
+# ## Test with TC
 
 test_df = pd.read_csv(test_path)
-test_with_tc_df = test_df[test_df['TC']].sample(5)
+test_with_tc_df = test_df[test_df['TC']].sample(2)
 plot_groundtruth_and_prediction(test_with_tc_df)
 
-# ## Test Without TC
+# 12h leadtime
+test_12h_df = label.load_label(test_path, leadtime=12)
+test_with_tc_12h_df = test_12h_df[test_12h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_with_tc_12h_df)
 
-test_without_tc_df = test_df[~test_df['TC']].sample(5)
+# 24h leadtime
+test_24h_df = label.load_label(test_path, leadtime=24)
+test_with_tc_24h_df = test_24h_df[test_24h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_with_tc_24h_df)
+
+# 36h leadtime
+test_36h_df = label.load_label(test_path, leadtime=36)
+test_with_tc_36h_df = test_36h_df[test_36h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_with_tc_36h_df)
+
+# ## Test without TC
+
+test_without_tc_df = test_df[~test_df['TC']].sample(2)
 plot_groundtruth_and_prediction(test_without_tc_df)
+
+# 12h leadtime
+test_without_tc_12h_df = test_12h_df[~test_12h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_without_tc_12h_df)
+
+# 24h leadtime
+test_without_tc_24h_df = test_24h_df[~test_24h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_without_tc_24h_df)
+
+# 36h leadtime
+test_without_tc_36h_df = test_36h_df[~test_36h_df['TC']].sample(2)
+plot_groundtruth_and_prediction(test_without_tc_36h_df)

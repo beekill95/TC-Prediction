@@ -173,48 +173,40 @@ def plot_stuff(ds, pressure_level, ax):
 # +
 import xarray as xr # noqa
 
-def plot_samples(true_positives_df):
-    visualizer = IntegratedGradientVisualizer()
+visualizer = IntegratedGradientVisualizer()
 
-    for _, row in true_positives_df.iterrows():
-        ds = xr.open_dataset(row['Path'])
-        print(row['Path'], row['Pred Prob'], row['Predicted'])
-        print('First Observed: ', row['First Observed'])
-        print(f'Location: {row["Latitude"]} lat - {row["Longitude"]} lon')
+for _, row in true_postivies.head(10).iterrows():
+    ds = xr.open_dataset(row['Path'])
+    print(row['Path'], row['Pred Prob'], row['Predicted'])
+    print('First Observed: ', row['First Observed'])
+    print(f'Location: {row["Latitude"]} lat - {row["Longitude"]} lon')
 
-        # Load data, predict and calculate integrated gradient.
-        X = tcdata.extract_variables_from_dataset(ds, subset)
-        igrads = IG.integrated_gradient(aug_model, X, baseline_input, preprocessor=normalizer)
-        X = normalizer(np.asarray([X]))
-        a = model.predict(X)
-        print(1/(1 + np.exp(-a)))
-        print('Model Prediction: ', aug_model.predict(X))
+    # Load data, predict and calculate integrated gradient.
+    X = tcdata.extract_variables_from_dataset(ds, subset)
+    igrads = IG.integrated_gradient(aug_model, X, baseline_input, preprocessor=normalizer)
+    X = normalizer(np.asarray([X]))
+    a = model.predict(X)
+    print(1/(1 + np.exp(-a)))
+    print('Model Prediction: ', aug_model.predict(X))
 
-        # Plot stuffs.
-        fig, ax = plt.subplots(figsize=(30, 18))
-        ax.set_title('SST and RH at 850mb, and Model Spatial Attribution')
+    # Plot stuffs.
+    fig, ax = plt.subplots(figsize=(30, 18))
+    ax.set_title('Wind Field, SST, and RH at 850mb')
 
-        # Plot integrated result.
-        a = visualizer.visualize(
-            dataset=ds,
-            integrated_gradients=igrads.numpy(),
-            clip_above_percentile=95,
-            clip_below_percentile=28,
-            morphological_cleanup=True,
-            outlines=False,
-            ax=ax,
-        )
+    # Plot integrated result.
+    a = visualizer.visualize(
+        dataset=ds,
+        integrated_gradients=igrads.numpy(),
+        clip_above_percentile=95,
+        clip_below_percentile=28,
+        morphological_cleanup=True,
+        outlines=False,
+        ax=ax,
+    )
+    
+    plot_stuff(ds, 850, ax=ax)
 
-        plot_stuff(ds, 850, ax=ax)
-
-        # Display the resulting plot.
-        fig.tight_layout()
-        display(fig)
-        plt.close(fig)
-
-
-# -
-
-plot_samples(true_postivies.head(10))
-
-plot_samples(true_postivies.tail(10))
+    # Display the resulting plot.
+    fig.tight_layout()
+    display(fig)
+    plt.close(fig)

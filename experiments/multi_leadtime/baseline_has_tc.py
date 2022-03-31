@@ -15,34 +15,30 @@
 
 # %cd ../..
 
-# +
-#import sys  # noqa
-#sys.path.append('../..')  # noqa
-
 from tc_formation import plot
 from tc_formation.data import data
 import tc_formation.models.layers
-import tc_formation.models.resnet as resnet
+import tc_formation.models.baseline as baseline
 import tc_formation.tf_metrics as tfm
 import tensorflow.keras as keras
 import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
-# -
 
-# Use ResNet
+# # Use ResNet with multiple lead time
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_resnet'
+# +
+exp_name = 'baseline_has_tc_multileadtime'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
 #data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -57,12 +53,62 @@ subset = dict(
 )
 data_shape = (41, 161, 13)
 
+subset = None
+data_shape = (41, 161, 135)
+exp_name = f'{exp_name}_all_features'
+
+# From Feature Importance - 3 features: capesfc, ugrdprs @ 800, vgrdprs @ 800
+# subset = dict(
+#     absvprs=None,
+#     rhprs=None,
+#     tmpprs=None,
+#     hgtprs=None,
+#     vvelprs=None,
+#     ugrdprs=[800],
+#     vgrdprs=[800],
+#     # capesfc=None,
+#     tmpsfc=None
+# )
+# data_shape = (41, 161, 3)
+# exp_name = f'{exp_name}_3_features'
+
+# From Feature Importance - 4 features: capesfc, ugrdprs @800, vgrdprs @800 & @200
+# subset = dict(
+#     absvprs=None,
+#     rhprs=None,
+#     tmpprs=None,
+#     hgtprs=None,
+#     vvelprs=None,
+#     ugrdprs=[800],
+#     vgrdprs=[800, 200],
+#     # capesfc=None,
+#     tmpsfc=None
+# )
+# data_shape = (41, 161, 4)
+# exp_name = f'{exp_name}_4_features'
+
+# From Feature Importance - 5 features: capesfc, ugrdprs @800, vgrdprs @800 & @200, and tmpsfc
+# subset = dict(
+#     absvprs=None,
+#     rhprs=None,
+#     tmpprs=None,
+#     hgtprs=None,
+#     vvelprs=None,
+#     ugrdprs=[800],
+#     vgrdprs=[800, 200],
+#     # capesfc=None,
+#     # tmpsfc=None
+# )
+# data_shape = (41, 161, 5)
+# exp_name = f'{exp_name}_5_features'
+
 # + tags=[]
-model = resnet.ResNet18(
+model = baseline.HasTCBaselineModel(
     input_shape=data_shape,
-    include_top=True,
     classes=1,
-    classifier_activation=None,)
+    output_activation=None,
+    name='baseline',
+)
 model.summary()
 # -
 
@@ -88,6 +134,7 @@ full_training = data.load_data_v1(
     batch_size=64,
     shuffle=True,
     subset=subset,
+    leadtime=[6, 12, 18, 24, 30, 36, 42, 48],
     group_same_observations=False,
 )
 # downsampled_training = data.load_data(
@@ -101,12 +148,15 @@ validation = data.load_data_v1(
     val_path,
     data_shape=data_shape,
     subset=subset,
+    leadtime=[6, 12, 18, 24, 30, 36, 42, 48],
     group_same_observations=True,
 )
 
-features = full_training.map(lambda X, _: X)
-normalizer = preprocessing.Normalization()
-normalizer.adapt(features)
+normalizer = preprocessing.Normalization(axis=-1)
+for X, y in iter(full_training):
+    normalizer.adapt(X)
+normalizer
+
 
 # +
 def normalize_data(x, y):
@@ -129,7 +179,7 @@ first_stage_history = model.fit(
     full_training,
     epochs=epochs,
     validation_data=validation,
-    class_weight={1: 10., 0: 1.},
+    #class_weight={1: 3., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
@@ -153,6 +203,18 @@ first_stage_history = model.fit(
 plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
+for leadtime in [6, 12, 18, 24, 30, 36, 42, 48]:
+    testing = data.load_data_v1(
+        test_path,
+        data_shape=data_shape,
+        subset=subset,
+        leadtime=leadtime,
+        group_same_observations=True,
+    )
+    testing = testing.map(normalize_data)
+    print(f'\n**** LEAD TIME: {leadtime}')
+    model.evaluate(testing)
+
 testing = data.load_data_v1(
     test_path,
     data_shape=data_shape,
@@ -160,13 +222,8 @@ testing = data.load_data_v1(
     group_same_observations=True,
 )
 testing = testing.map(normalize_data)
-model.evaluate(
-    testing,
-    callbacks=[
-        keras.callbacks.TensorBoard(
-            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
-        ),
-    ])
+print(f'\n**** LEAD TIME: {leadtime}')
+model.evaluate(testing)
 
 # # Second stage
 #
