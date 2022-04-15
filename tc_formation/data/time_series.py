@@ -48,7 +48,15 @@ class TimeSeriesTropicalCycloneDataLoader:
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         pass
 
-    def load_dataset(self, data_path, shuffle=False, batch_size=64, leadtimes: List[int]=None, nonTCRatio=None, other_happening_tc_ratio=None):
+    def load_dataset(
+            self,
+            data_path,
+            shuffle=False,
+            batch_size=64,
+            leadtimes: List[int]=None,
+            nonTCRatio=None,
+            other_happening_tc_ratio=None,
+            **kwargs):
         cls = TimeSeriesTropicalCycloneDataLoader
 
         # Load TC dataframe.
@@ -61,6 +69,10 @@ class TimeSeriesTropicalCycloneDataLoader:
         tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
         print('Check previous hours valid')
 
+        # TODO:
+        # can we move this into the dataset pipeline,
+        # thus we can train the whole dataset without worrying about
+        # unbalanced data.
         tc_df = data_utils.filter_negative_samples(
                 tc_df,
                 negative_samples_ratio=nonTCRatio,
@@ -76,7 +88,7 @@ class TimeSeriesTropicalCycloneDataLoader:
         print('Dataframe loaded')
 
         # Convert to tf dataset.
-        dataset = self._process_to_dataset(tc_df)
+        dataset = self._process_to_dataset(tc_df, **kwargs)
 
         if shuffle:
             dataset = dataset.shuffle(batch_size * 3)
@@ -274,6 +286,7 @@ class TropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalCycloneWith
                 nonTCRatio=nonTCRatio)
 
         return dataset.map(remove_time_dimension)
+
 
 class TimeSeriesTropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneDataLoader):
     def __init__(self, *args, **kwargs):

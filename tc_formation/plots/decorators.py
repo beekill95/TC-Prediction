@@ -7,37 +7,44 @@ import numpy as np
 def _with_basemap(func):
     @wraps(func)
     def function_with_basemap(dataset=None, basemap=None, ax=None, *args, **kwargs):
+        assert ax is not None, 'Required `ax`'
         latitude = dataset['lat']
         longitude = dataset['lon']
 
         if basemap is None:
-            basemap = Basemap(
-                projection='cyl',
-                llcrnrlon=np.nanmin(longitude),
-                llcrnrlat=np.nanmin(latitude),
-                urcrnrlon=np.nanmax(longitude),
-                urcrnrlat=np.nanmax(latitude),
-                resolution='h',
-                ax=ax)
+            try:
+                basemap = ax.__d_basemap
+            except AttributeError:
+                basemap = Basemap(
+                    projection='cyl',
+                    llcrnrlon=np.nanmin(longitude),
+                    llcrnrlat=np.nanmin(latitude),
+                    urcrnrlon=np.nanmax(longitude),
+                    urcrnrlat=np.nanmax(latitude),
+                    resolution='h',
+                    ax=ax)
 
-            parallels = np.arange(-90, 90, 5.)
-            meridians = np.arange(-180, 180, 20)
-            basemap.drawparallels(
-                parallels,
-                labels=[1, 0, 0, 0],
-                fontsize=18,
-                color="grey")
-            basemap.drawmeridians(
-                meridians,
-                labels=[0, 0, 0, 1],
-                fontsize=18,
-                color="grey")
+                parallels = np.arange(-90, 90, 5.)
+                meridians = np.arange(-180, 180, 20)
+                basemap.drawparallels(
+                    parallels,
+                    labels=[1, 0, 0, 0],
+                    fontsize=30,
+                    color="grey")
+                basemap.drawmeridians(
+                    meridians,
+                    labels=[0, 0, 0, 1],
+                    fontsize=30,
+                    color="grey")
 
-            basemap.drawcoastlines()
-            basemap.drawstates()
-            basemap.drawcountries()
-            basemap.drawlsmask(land_color='Linen', ocean_color='#CCFFFF')
-            basemap.drawcounties()
+                basemap.drawcoastlines()
+                basemap.drawstates()
+                basemap.drawcountries()
+                basemap.drawlsmask(land_color='Linen', ocean_color='#CCFFFF')
+                basemap.drawcounties()
+
+                # Assign basemap to ax for future reference.
+                ax.__d_basemap = basemap
 
         return func(*args, dataset=dataset, basemap=basemap, ax=ax, **kwargs)
 

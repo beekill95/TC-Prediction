@@ -54,7 +54,7 @@ def plot_variable(
         levels = None
 
     cs = basemap.contour(lats, longs, data, levels=levels, **contour_kwargs)
-    ax.clabel(cs, cs.levels, inline=True, fontsize=20)
+    ax.clabel(cs, cs.levels, inline=True, fontsize='xx-large')
     # basemap.colorbar(cs, "right", size="5%", pad="2%")
 
 

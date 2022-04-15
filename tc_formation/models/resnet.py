@@ -82,7 +82,8 @@ def _ResNet(stack_fn,
     if not preact:
         x = layers.BatchNormalization(
             axis=bn_axis, epsilon=1.001e-5, name='conv1_bn')(x)
-        x = layers.Activation('relu', name='conv1_relu')(x)
+        # x = layers.Activation('relu', name='conv1_relu')(x)
+        x = layers.LeakyReLU(name='conv1_relu')(x)
 
     x = layers.ZeroPadding2D(padding=((1, 1), (1, 1)), name='pool1_pad')(x)
     x = layers.MaxPooling2D(3, strides=2, name='pool1_pool')(x)
@@ -92,7 +93,8 @@ def _ResNet(stack_fn,
     if preact:
         x = layers.BatchNormalization(
             axis=bn_axis, epsilon=1.001e-5, name='post_bn')(x)
-        x = layers.Activation('relu', name='post_relu')(x)
+        # x = layers.Activation('relu', name='post_relu')(x)
+        x = layers.LeakyReLU(name='post_relu')(x)
 
     if include_top:
         x = layers.GlobalAveragePooling2D(name='avg_pool')(x)
@@ -146,10 +148,12 @@ def _block0(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
         filters, kernel_size, padding='SAME', name=name + '_1_conv')(x)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
-    x = layers.Activation('relu', name=name + '_1_relu')(x)
+    # x = layers.Activation('relu', name=name + '_1_relu')(x)
+    x = layers.LeakyReLU(name=name + '_1_relu')(x)
 
     x = layers.Add(name=name + '_add')([shortcut, x])
-    x = layers.Activation('relu', name=name + '_out')(x)
+    # x = layers.Activation('relu', name=name + '_out')(x)
+    x = layers.LeakyReLU(name=name + '_out')(x)
     return x
 
 
@@ -171,7 +175,8 @@ def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None
 
     preact = layers.BatchNormalization(
             axis=bn_axis, epsilon=1.001e-5, name=name + '_preact_bn')(x)
-    preact = layers.Activation('relu', name=name + '_preact_relu')(preact)
+    # preact = layers.Activation('relu', name=name + '_preact_relu')(preact)
+    preact = layers.LeakyReLU(name=name + '_preact_relu')(preact)
 
     if conv_shortcut:
         shortcut = layers.Conv2D(
@@ -183,10 +188,12 @@ def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None
         filters, kernel_size, strides=stride, padding='SAME', name=name + '_1_conv')(preact)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
-    x = layers.Activation('relu', name=name + '_1_relu')(x)
+    # x = layers.Activation('relu', name=name + '_1_relu')(x)
+    x = layers.LeakyReLU(name=name + '_1_relu')(x)
 
     x = layers.Add(name=name + '_add')([shortcut, x])
-    x = layers.Activation('relu', name=name + '_out')(x)
+    # x = layers.Activation('relu', name=name + '_out')(x)
+    x = layers.LeakyReLU(name=name + '_out')(x)
     return x
 
 
@@ -253,20 +260,23 @@ def _block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
     x = layers.Conv2D(filters, 1, strides=stride, name=name + '_1_conv')(x)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
-    x = layers.Activation('relu', name=name + '_1_relu')(x)
+    # x = layers.Activation('relu', name=name + '_1_relu')(x)
+    x = layers.LeakyReLU(name=name + '_1_relu')(x)
 
     x = layers.Conv2D(
         filters, kernel_size, padding='SAME', name=name + '_2_conv')(x)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_2_bn')(x)
-    x = layers.Activation('relu', name=name + '_2_relu')(x)
+    # x = layers.Activation('relu', name=name + '_2_relu')(x)
+    x = layers.LeakyReLU(name=name + '_2_relu')(x)
 
     x = layers.Conv2D(4 * filters, 1, name=name + '_3_conv')(x)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_3_bn')(x)
 
     x = layers.Add(name=name + '_add')([shortcut, x])
-    x = layers.Activation('relu', name=name + '_out')(x)
+    # x = layers.Activation('relu', name=name + '_out')(x)
+    x = layers.LeakyReLU(name=name + '_out')(x)
     return x
 
 

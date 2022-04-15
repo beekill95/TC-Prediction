@@ -38,9 +38,9 @@ class SingleTimeStepMixin(TimeSeriesTropicalCycloneDataLoader):
     def __init__(self, *args, **kwargs):
         super().__init__(previous_hours=[], *args, **kwargs)
 
-    def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
+    def _process_to_dataset(self, tc_df: pd.DataFrame, **kwargs) -> tf.data.Dataset:
         cls = SingleTimeStepMixin
-        dataset = super()._process_to_dataset(tc_df)
+        dataset = super()._process_to_dataset(tc_df, **kwargs)
 
         # Remove the time axis.
         dataset = dataset.map(lambda d, *args: cls._remove_time_axis(d, *args))
