@@ -53,6 +53,7 @@ class TimeSeriesTropicalCycloneDataLoader:
             data_path,
             shuffle=False,
             batch_size=64,
+            caching=True,
             leadtimes: List[int]=None,
             nonTCRatio=None,
             other_happening_tc_ratio=None,
@@ -93,7 +94,8 @@ class TimeSeriesTropicalCycloneDataLoader:
         if shuffle:
             dataset = dataset.shuffle(batch_size * 3)
 
-        dataset = dataset.cache()
+        if caching:
+            dataset = dataset.cache()
         dataset = dataset.batch(batch_size)
         return dataset.prefetch(1)
 
