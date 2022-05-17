@@ -20,6 +20,7 @@ dependencies:
     - -r requirements.txt
     - -r requirements-dev.txt
   - papermill
+  - tempest-extremes=2.2.1
   - tensorflow-gpu=2.4.1
   - xarray
 
