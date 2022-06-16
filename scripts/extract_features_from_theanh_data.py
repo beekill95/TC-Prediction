@@ -60,6 +60,26 @@ def parse_arguments(args=None):
 
 
 def calculate_vorticity(ds: Dataset):
+    south_north_size = ds.dimensions['south_north'].size
+    west_east_size = ds.dimensions['west_east'].size
+
+    # Fill in missing variables so we can calculate vorticity.
+    mapfac_u = ds.createVariable('MAPFAC_U', 'f4', ('Time', 'south_north', 'west_east_stag'))
+    mapfac_u[:, :, :] = np.ones(
+        (1, south_north_size, west_east_size + 1), dtype=np.float32)
+
+    mapfac_v = ds.createVariable('MAPFAC_V', 'f4', ('Time', 'south_north_stag', 'west_east'))
+    mapfac_v[:, :, :] = np.ones(
+        (1, south_north_size + 1, west_east_size), dtype=np.float32)
+
+    mapfac_m = ds.createVariable('MAPFAC_M', 'f4', ('Time', 'south_north', 'west_east'))
+    mapfac_m[:, :, :] = np.ones(
+        (1, south_north_size, west_east_size), dtype=np.float32)
+
+    f = ds.createVariable('F', 'f4', ('Time', 'south_north', 'west_east'))
+    omega = 2 * np.pi / 86400
+    f[:, :, :] = 2 * omega * np.sin(ds['XLAT'][:, :])
+
     return wrf.getvar(ds, 'avo')
 
 
@@ -91,7 +111,17 @@ def calculate_vwind(ds: Dataset):
 
 
 def calculate_wwind(ds: Dataset):
-    return wrf.getvar(ds, 'wa', units='m s-1')
+    w = wrf.getvar(ds, 'wa', units='m s-1')
+
+    # Convert to Pa/s
+    p = calculate_pressure(ds)
+    t = calculate_temperature(ds)
+    rgas = 287.058
+    rho = p / (rgas * t)
+    omega = -w * rho * 9.80665
+    omega.attrs['units'] = 'Pa s-1'
+
+    return omega
 
 
 def calculate_slp(ds: Dataset):
@@ -184,7 +214,7 @@ if __name__ == '__main__':
             v[name] = values
             logging.info(f'{name} is extracted with shape {values.data.shape}.')
         except (ValueError, KeyError) as e:
-            logging.warning(f'{name} cannot be extracted.')
+            logging.warning(f'{name} cannot be extracted.', exc_info=True)
 
     # Convert to xr.Dataset.
     lat_coord = ds['XLAT'][0, :, 0]

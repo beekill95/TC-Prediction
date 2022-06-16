@@ -3,11 +3,10 @@
 # This is the files that should be processed by the script.
 WRF_FILES=(/N/project/pfec_climo/anhvu/WRFV3/WPAC_RCP45_2???/raw_wrfout_d01_*)
 OUTPUT_DIR="data/theanh_WPAC_RCP45/"
-OUTPUT_PREFIX="theanhRCP45"
+OUTPUT_PREFIX="RCP45"
 
 # Number of parallel runs.
-N_PROCESSES=4
-
+N_PROCESSES=16
 
 # Now, loop each file and process it with python script.
 for file in "${WRF_FILES[@]}"; do
