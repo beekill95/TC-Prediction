@@ -85,7 +85,7 @@ class CustomF1Score(tf.keras.metrics.Metric):
         r = self.recall_fn.result()
         return 2 * p * r / (p + r + 1e-6)
 
-    def reset_states(self):
+    def reset_state(self):
         # we also need to reset the state of the precision and recall objects
         self.precision_fn.reset_states()
         self.recall_fn.reset_states()
