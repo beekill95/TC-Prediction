@@ -31,11 +31,19 @@ def parse_arguments(args=None):
         help='Path to directory containing netCDF files.',
     )
     parser.add_argument(
-        '--best-track-files',
-        dest='best_tracks',
+        '--overview-best-track-files',
+        dest='overview_best_tracks',
         action='store',
         required=True,
         help='Path to all tccount_number files for all years.',
+        nargs='+',
+    )
+    parser.add_argument(
+        '--detailed-best-track-files',
+        dest='detailed_best_tracks',
+        action='store',
+        required=True,
+        help='Path to all tccount_final files for all years.',
         nargs='+',
     )
     parser.add_argument(
@@ -81,17 +89,27 @@ def parse_nc_date(nc_file_path):
 
 
 class BestTrack:
-    Storm = namedtuple('Storm', ['Id', 'Lat', 'Long', 'Date'])
+    Storm = namedtuple('Storm', ['Id', 'Lat', 'Long', 'Date', 'End'])
 
-    def __init__(self, best_track_file):
-        self._year = parse_year(best_track_file)
-        best_track = pd.read_csv(
-            best_track_file,
+    def __init__(self, best_track_overview, best_track_detailed):
+        self._year = parse_year(best_track_overview)
+        detailed_year = parse_year(best_track_detailed)
+        assert self._year == detailed_year, 'Different year given for overview and detailed best track.'
+
+        overview = pd.read_csv(
+            best_track_overview,
             names=['Days', 'StormId', 'Long', 'Lat', 'Unknown'],
             delim_whitespace=True)
+        detailed = pd.read_csv(
+            best_track_detailed,
+            names=['Days', 'StormId', 'Long', 'Lat'],
+            delim_whitespace=True,
+            usecols=list(range(4)),
+        )
 
         self._storms = dict()
-        for _, row in best_track.iterrows():
+        for _, row in overview.iterrows():
+            row.End = self._extract_end_date(row.StormId, detailed)
             storm = self._create_storm(row)
             self._storms[storm.Date] = storm
 
@@ -107,16 +125,24 @@ class BestTrack:
 
     def _create_storm(self, row):
         occurence_date = convert_to_date(row.Days, self.year)
+        end_date = convert_to_date(row.End, self.year)
         return self.Storm(
             f'{self.year}_{row.StormId}',
             row.Lat,
             row.Long,
             occurence_date,
+            end_date,
         )
+
+    def _extract_end_date(self, storm_id, detailed_track):
+        last_track = (detailed_track[detailed_track['StormId'] == storm_id]
+                      .sort_values('Days')
+                      .iloc[-1])
+        return last_track['Days']
  
 
 def main():
-    DATE_TIME_OUTPUT_FMT = '%Y-%d-%m %H-%M'
+    DATE_TIME_OUTPUT_FMT = '%Y-%m-%d %H:%M:%S'
     args = parse_arguments()
 
     # Make output directory if necessary.
@@ -124,8 +150,10 @@ def main():
     os.makedirs(outdir, exist_ok=True)
 
     # Sort best tracks file.
-    best_tracks = iter(sorted(args.best_tracks, key=parse_year))
-    best_track = BestTrack(next(best_tracks))
+    overview_best_tracks = iter(sorted(args.overview_best_tracks, key=parse_year))
+    detailed_best_tracks = iter(sorted(args.detailed_best_tracks, key=parse_year))
+    best_track = BestTrack(
+        next(overview_best_tracks), next(detailed_best_tracks))
 
     output = []
     for nc_file in sorted(glob.glob(os.path.join(args.nc_dir, '*.nc'))):
@@ -135,7 +163,8 @@ def main():
         if file_date.year > best_track.year:
             # Find the suitable best track for the file's year.
             while best_track.year < file_date.year:
-                best_track = BestTrack(next(best_tracks))
+                best_track = BestTrack(
+                    next(overview_best_tracks), next(detailed_best_tracks))
         elif file_date.year < best_track.year:
             # This should never happen because both list (nc_file and best_track)
             # are sorted. That means both of them should progress year by year.
@@ -154,10 +183,14 @@ def main():
                     output.append({
                         'Date': file_date.strftime(DATE_TIME_OUTPUT_FMT),
                         'TC': tc_will_occur,
-                        'TC_ID': storm.Id if storm else None,
+                        'TC Id': storm.Id if storm else None,
                         'First Observed': storm.Date if storm else None,
+                        'Last Observed': storm.End if storm else None,
                         'Latitude': storm.Lat if storm else 0.,
                         'Longitude': storm.Long if storm else 0.,
+                        'First Observed Type': 'TS', # default value.
+                        'Will Develop to TC': True, # default value.
+                        'Developing Date': storm.Date if storm else None,
                         'Path': nc_file,
                         'Is Other TC Happening': False, # We don't have that info,
                         'Other TC Locations': [],
