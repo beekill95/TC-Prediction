@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import Tuple
 import xarray as xr
 
 def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
@@ -25,6 +26,19 @@ def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
     data = np.moveaxis(data, 0, -1)
 
     return data
+
+
+def split_dataset_into_postive_negative_samples(dataset: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    positive_samples = dataset[dataset['TC']].reset_index()
+    negative_samples = dataset[~dataset['TC']].reset_index()
+    return positive_samples, negative_samples
+
+def split_negative_samples_into_other_happening_tc_samples(negative_samples: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    assert 'Is Other TC Happening' in negative_samples.columns, 'Require labels .csv with v3+'
+    other_tc_happening_samples = negative_samples[negative_samples['Is Other TC Happening']]
+    negative_samples = negative_samples[~negative_samples['Is Other TC Happening']]
+    return negative_samples.reset_index(), other_tc_happening_samples.reset_index()
+
 
 def filter_negative_samples(dataset: pd.DataFrame, negative_samples_ratio=None, other_happening_tc_ratio=None):
     if negative_samples_ratio is None and other_happening_tc_ratio is None:

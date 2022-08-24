@@ -126,3 +126,11 @@ class BBoxesIoUMetric(Metric):
 
         return tp, fp, fn
 
+
+class ExtendedBBoxesIoUMetric(BBoxesIoUMetric):
+    def __init__(self, ext_radius=20, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ext_radius = ext_radius
+
+    def update_state(self, y_true, y_pred, *args, **kwargs):
+        pass

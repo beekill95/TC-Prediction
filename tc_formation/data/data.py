@@ -1,3 +1,4 @@
+from . import utils as data_utils
 from datetime import datetime, timedelta
 from functools import reduce, partial
 import glob
@@ -107,7 +108,6 @@ def group_observations_by_date(tc_labels: pd.DataFrame):
         return reduce(lambda agg, x: agg + [x], values, [])
 
     grouped = tc_labels.groupby('Date')
-
     tc_labels['TC'] = grouped['TC'].transform(
             lambda has_tc: reduce(lambda agg, x: agg and x, has_tc, True))
 
@@ -193,6 +193,112 @@ def load_data(
 
     # Batch the dataset.
     dataset = dataset.batch(batch_size)
+
+    # Always prefetch the data for better performance.
+    return dataset.prefetch(prefetch_batch)
+
+def load_data_v2(
+        labels_path,
+        data_shape,
+        batch_size=32,
+        shuffle=False,
+        negative_samples_ratio=None,
+        other_happening_tc_ratio=None,
+        prefetch_batch=1,
+        include_tc_position=False,
+        subset=None,
+        leadtime: Union[List[int], int] = None,
+        group_same_observations=False):
+
+    if include_tc_position:
+        raise ValueError('Under Construction!')
+
+    def process_df_to_tf_dataset(df, name=None):
+        dataset = tf.data.Dataset.from_tensor_slices((df['Path'], np.where(df['TC'], 1, 0)))
+        
+        if shuffle:
+            dataset = dataset.shuffle(len(dataset))
+
+        # Load given dataset to memory.
+        dataset = dataset.map(lambda path, tc: tf.numpy_function(
+            partial(load_observation_data_v1, subset=subset),
+            inp=[path, tc],
+            Tout=([tf.float32, tf.float64]
+                  if include_tc_position
+                  else [tf.float32, tf.int64]),
+            name=name),
+            num_parallel_calls=tf.data.AUTOTUNE,
+            deterministic=False,
+        )
+
+        # Tensorflow should figure out the shape of the output of previous map,
+        # but it doesn't, so we have to do it our self.
+        # https://github.com/tensorflow/tensorflow/issues/31373#issuecomment-524666365
+        dataset = dataset.map(
+                lambda observation, tc: _set_shape(observation,
+                                                   tc,
+                                                   data_shape,
+                                                   include_tc_position))
+
+        # Cache the dataset for better performance.
+        dataset = dataset.cache()
+        return dataset
+
+    # Read labels from path.
+    labels = pd.read_csv(labels_path)
+
+    # Make sure that when other happening tc ratio is set,
+    # the our labels have the information to do so.
+    if other_happening_tc_ratio is not None:
+        assert ('Is Other TC Happening' in labels.columns), 'Incompatible label version, requires labels version at least v3'
+    
+    # Filter in lead time.
+    labels = filter_in_leadtime(labels, leadtime)
+
+    # Group same observations.
+    # TODO: implement this feature,
+    # then rerun all the experiment I did today (Nov 16th, 2021)
+    # with val, and test set having group_same_observations=True
+    if group_same_observations:
+        nb_rows = len(labels)
+        labels = group_observations_by_date(labels)
+        print(f'Grouping same observations reduces number of rows from {nb_rows} to {len(labels)}.')
+
+    print(f'Number of positive labels: {np.sum(labels["TC"])}')
+    print(f'Number of negative labels: {np.sum(~labels["TC"])}')
+
+    # Implement negative sampling.
+    if negative_samples_ratio is not None:
+        datasets = []
+        probs = []
+        positive_samples, negative_samples = data_utils.split_dataset_into_postive_negative_samples(labels)
+
+        # Process positive samples into dataset.
+        positive_ds = process_df_to_tf_dataset(positive_samples, name='load_obs_data_v2_positive_samples')
+        datasets.append(positive_ds)
+        probs.append(1.)
+
+        if other_happening_tc_ratio is not None:
+            negative_samples, other_tc_samples = data_utils.split_negative_samples_into_other_happening_tc_samples(negative_samples)
+
+            negative_ds = process_df_to_tf_dataset(negative_samples, name='load_obs_data_v2_negative_samples')
+            datasets.append(negative_ds)
+            probs.append(negative_samples_ratio)
+
+            other_tc_ds = process_df_to_tf_dataset(other_tc_samples, name='load_obs_data_v2_other_tc_samples')
+            datasets.append(other_tc_ds)
+            probs.append(other_happening_tc_ratio)
+        else:
+            negative_ds = process_df_to_tf_dataset(negative_samples, name='load_obs_data_v2_negative_samples')
+            datasets.append(negative_ds)
+            probs.append(negative_samples_ratio)
+
+        dataset = tf.data.Dataset.sample_from_datasets(datasets, weights=probs, stop_on_empty_dataset=True)
+    else:
+        dataset = process_df_to_tf_dataset(labels, name='load_observation_data_v2')
+
+    # Batch the dataset.
+    dataset = dataset.batch(batch_size, drop_remainder=True)
 
     # Always prefetch the data for better performance.
     return dataset.prefetch(prefetch_batch)

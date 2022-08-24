@@ -24,7 +24,7 @@ def _with_basemap(func):
                     resolution='h',
                     ax=ax)
 
-                parallels = np.arange(-90, 90, 5.)
+                parallels = np.arange(-90, 90, 10)
                 meridians = np.arange(-180, 180, 20)
                 basemap.drawparallels(
                     parallels,

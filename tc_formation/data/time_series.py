@@ -30,7 +30,9 @@ class TimeSeriesTropicalCycloneDataLoader:
         name = os.path.basename(path)
         name, _ = os.path.splitext(name)
         # The date of the observation is embedded in the filename: `fnl_%Y%m%d_%H_%M.nc`
-        date_part = ''.join(list(name)[4:])
+        name_parts = name.split('_')
+        name_prefix = name_parts[0]
+        date_part = ''.join('_'.join(name_parts[1:]))
 
         date = datetime.strptime(date_part, '%Y%m%d_%H_%M')
 
@@ -38,7 +40,7 @@ class TimeSeriesTropicalCycloneDataLoader:
         previous_times.sort()
         dates = [date - timedelta(hours=time) for time in previous_times]
         dates += [date]
-        return [os.path.join(dirpath, f"fnl_{d.strftime('%Y%m%d_%H_%M')}.nc") for d in dates]
+        return [os.path.join(dirpath, f"{name_prefix}_{d.strftime('%Y%m%d_%H_%M')}.nc") for d in dates]
 
     @classmethod
     def _are_valid_paths(cls, paths: List[str]) -> bool:
@@ -47,6 +49,81 @@ class TimeSeriesTropicalCycloneDataLoader:
     @abc.abstractmethod
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         pass
+
+    def load_dataset_wip(
+            self,
+            data_path,
+            shuffle=False,
+            batch_size=64,
+            caching=True,
+            leadtimes: List[int]=None,
+            nonTCRatio=None,
+            other_happening_tc_ratio=None,
+            **kwargs):
+        cls = TimeSeriesTropicalCycloneDataLoader
+
+        # Load TC dataframe.
+        print('Dataframe loading.')
+        tc_df = self._load_tc_csv(data_path, leadtimes)
+        print('Dataframe in memory')
+        tc_df['Path'] = tc_df['Path'].apply(
+                partial(cls._add_previous_observation_data_paths, previous_times=self._previous_hours))
+        print('Add previous hours')
+        tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
+        print('Check previous hours valid 2')
+
+        # TODO:
+        # can we move this into the dataset pipeline,
+        # thus we can train the whole dataset without worrying about
+        # unbalanced data.
+        print('Dataframe loaded')
+        if nonTCRatio is not None:
+            datasets = []
+            probs = []
+            positive_samples, negative_samples = data_utils.split_dataset_into_postive_negative_samples(tc_df)
+
+            # Process positive samples into dataset.
+            positive_ds = self._process_to_dataset(positive_samples, **kwargs)
+            datasets.append(positive_ds)
+            probs.append(1.)
+
+            if other_happening_tc_ratio is not None:
+                negative_samples, other_tc_samples = data_utils.split_negative_samples_into_other_happening_tc_samples(negative_samples)
+
+                negative_ds = self._process_to_dataset(negative_samples, **kwargs)
+                datasets.append(negative_ds)
+                probs.append(nonTCRatio)
+
+                other_tc_ds = self._process_to_dataset(other_tc_samples, **kwargs)
+                datasets.append(other_tc_ds)
+                probs.append(other_happening_tc_ratio)
+            else:
+                negative_ds = self._process_to_dataset(negative_samples, **kwargs)
+                datasets.append(negative_ds)
+                probs.append(nonTCRatio)
+
+            dataset = tf.data.Dataset.sample_from_datasets(datasets, weights=probs, stop_on_empty_dataset=True)
+        else:
+            dataset = self._process_to_dataset(tc_df, **kwargs)
+
+        # if nonTCRatio is not None:
+        #     nb_nonTC = int(round(len(tc_df[tc_df['TC']]) * nonTCRatio))
+        #     with_tc_df = tc_df[tc_df['TC']]
+        #     without_tc_df = tc_df[~tc_df['TC']].sample(nb_nonTC)
+        #     tc_df = pd.concat([with_tc_df, without_tc_df], axis=0)
+        #     tc_df.sort_values('Date', axis=0, inplace=True)
+
+
+        # Convert to tf dataset.
+        # dataset = self._process_to_dataset(tc_df, **kwargs)
+
+        if shuffle:
+            dataset = dataset.shuffle(batch_size * 3)
+
+        if caching:
+            dataset = dataset.cache()
+        dataset = dataset.batch(batch_size)
+        return dataset.prefetch(1)
 
     def load_dataset(
             self,
@@ -69,6 +146,7 @@ class TimeSeriesTropicalCycloneDataLoader:
         print('Add previous hours')
         tc_df = tc_df[tc_df['Path'].apply(cls._are_valid_paths)]
         print('Check previous hours valid')
+        print(f'Remaining rows: {len(tc_df)}')
 
         # TODO:
         # can we move this into the dataset pipeline,
