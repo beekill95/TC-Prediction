@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # This is the files that should be processed by the script.
-WRF_FILES=(/N/project/pfec_climo/anhvu/WRFV3/WPAC_RCP45_2???/raw_wrfout_d01_*)
-OUTPUT_DIR="data/theanh_WPAC_RCP45/"
-OUTPUT_PREFIX="RCP45"
+WRF_FILES=(/N/project/pfec_climo/anhvu/WRFV3/WPAC_RCP85_2???/raw_wrfout_d01_*)
+OUTPUT_DIR="data/theanh_WPAC_RCP85/"
+OUTPUT_PREFIX="RCP85"
 
 # Number of parallel runs.
 N_PROCESSES=16

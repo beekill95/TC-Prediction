@@ -62,5 +62,6 @@ if __name__ == '__main__':
         [test_labels, 'test'],
     ]
     for label, label_type in labels:
-        path = args.labels.replace('.csv', f'_{label_type}.csv')
-        label.to_csv(path, index=False)
+        if label is not None:
+            path = args.labels.replace('.csv', f'_{label_type}.csv')
+            label.to_csv(path, index=False)

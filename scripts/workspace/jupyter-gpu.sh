@@ -1,7 +1,7 @@
 #!/bin/bash -i
 
 # Activate conda environment with tensorflow-gpu
-conda activate tc_prediction
+conda activate tc_updated_2
 
 # Then, forward port back to h2
 server=${1-h2}
@@ -11,4 +11,5 @@ ssh -N -f -R $port:localhost:$port $server
 
 # Finally, start jupyter notebook at the specified port.
 echo "Starting jupyter notebook at port $port"
+python --version
 jupyter-lab --no-browser --ip 0.0.0.0 --port $port --notebook-dir=.
