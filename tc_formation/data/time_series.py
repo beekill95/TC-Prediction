@@ -463,4 +463,3 @@ class TropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneWithLocatio
                 nonTCRatio=nonTCRatio)
 
         return dataset.map(remove_time_dimension)
-

@@ -145,11 +145,16 @@ def _block0(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
         shortcut = layers.MaxPooling2D(1, strides=stride)(x) if stride > 1 else x
 
     x = layers.Conv2D(
-        filters, kernel_size, padding='SAME', name=name + '_1_conv')(x)
+        filters, kernel_size, strides=stride, padding='SAME', name=name + '_1_conv')(x)
     x = layers.BatchNormalization(
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
     # x = layers.Activation('relu', name=name + '_1_relu')(x)
     x = layers.LeakyReLU(name=name + '_1_relu')(x)
+
+    x = layers.Conv2D(
+        filters, kernel_size, padding='SAME', name=name + '_2_conv')(x)
+    x = layers.BatchNormalization(
+        axis=bn_axis, epsilon=1.001e-5, name=name + '_2_bn')(x)
 
     x = layers.Add(name=name + '_add')([shortcut, x])
     # x = layers.Activation('relu', name=name + '_out')(x)
@@ -190,6 +195,11 @@ def _block0v2(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None
         axis=bn_axis, epsilon=1.001e-5, name=name + '_1_bn')(x)
     # x = layers.Activation('relu', name=name + '_1_relu')(x)
     x = layers.LeakyReLU(name=name + '_1_relu')(x)
+
+    x = layers.Conv2D(
+        filters, kernel_size, padding='SAME', name=name + '_2_conv')(x)
+    x = layers.BatchNormalization(
+        axis=bn_axis, epsilon=1.001e-5, name=name + '_2_bn')(x)
 
     x = layers.Add(name=name + '_add')([shortcut, x])
     # x = layers.Activation('relu', name=name + '_out')(x)

@@ -106,18 +106,15 @@ def encoder_block(x, filters, kernel_size=3, pooling=True, has_shortcut=True, na
 
     return x
 
+
 def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mode='add', has_shortcut=True, upsampling=True, name=None):
     bn_axis = 3 if keras.backend.image_data_format() == 'channels_last' else 1
 
-    if upsampling:
-        x = layers.UpSampling2D((2, 2), name=f'{name}_0_pool')(x)
+    _, h, w, _ = encoder_output.shape
 
-    # Concatenate the decoder output and encoder output
-    if encoder_output is not None:
-        if encoder_output.shape[1] != x.shape[1]:
-            x = layers.ZeroPadding2D(((0, 1), (0, 0)), name=f'{name}_0_height_pad')(x)
-        if encoder_output.shape[2] != x.shape[2]:
-            x = layers.ZeroPadding2D(((0, 0), (0, 1)), name=f'{name}_0_width_pad')(x)
+    # Different implementation for upsampling.
+    if upsampling:
+        x = layers.Resizing(h, w, name=f'{name}_0_resizing')(x)
         if decoder_shortcut_mode == 'add':
             encoder_output = layers.Conv2D(
                     x.shape[-1],
@@ -128,6 +125,27 @@ def decoder_block(x, encoder_output, filters, kernel_size=3, decoder_shortcut_mo
             x = layers.Add(name=f'{name}_0_decoder_shortcut_add')([x, encoder_output])
         else:
             x = layers.Concatenate(axis=bn_axis, name=f'{name}_0_decoder_shortcut_concat')([x, encoder_output])
+
+    # Old implementation.
+    # if upsampling:
+    #     x = layers.UpSampling2D((2, 2), name=f'{name}_0_pool')(x)
+
+    # # Concatenate the decoder output and encoder output
+    # if encoder_output is not None:
+    #     if encoder_output.shape[1] != x.shape[1]:
+    #         x = layers.ZeroPadding2D(((0, 1), (0, 0)), name=f'{name}_0_height_pad')(x)
+    #     if encoder_output.shape[2] != x.shape[2]:
+    #         x = layers.ZeroPadding2D(((0, 0), (0, 1)), name=f'{name}_0_width_pad')(x)
+    #     if decoder_shortcut_mode == 'add':
+    #         encoder_output = layers.Conv2D(
+    #                 x.shape[-1],
+    #                 3,
+    #                 # kernel_regularizer=keras.regularizers.l2(0.01),
+    #                 padding='SAME',
+    #                 name=f'{name}_0_decoder_conv')(encoder_output)
+    #         x = layers.Add(name=f'{name}_0_decoder_shortcut_add')([x, encoder_output])
+    #     else:
+    #         x = layers.Concatenate(axis=bn_axis, name=f'{name}_0_decoder_shortcut_concat')([x, encoder_output])
 
     shortcut = x if has_shortcut else None
 
