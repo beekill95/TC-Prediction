@@ -3,6 +3,7 @@ Vision Transformer as described in
 [An Image Is Worth 16x16 Words](https://arxiv.org/abs/2010.11929v2)
 """
 import keras_nlp
+import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as layers
@@ -16,7 +17,7 @@ def ViT(*, input_shape=None,
         attention_heads=12,
         include_top=True, logits=True, classes=1, name='ViT'):
     """
-    Implement Visual Transformer.
+    Implement Vision Transformer.
 
     Parameters
     ----------
@@ -41,7 +42,7 @@ def ViT(*, input_shape=None,
             img_input = input_tensor
     
     # _, T, *_ = input_tensor.shape
-    print(input_tensor.shape)
+    # print(input_tensor.shape)
     # We should flatten the input tensor if necessary.
     # if input_shape is not None:
     #     x = layers.Reshape((T, -1), name=name + '/reshape')(img_input)
@@ -50,15 +51,16 @@ def ViT(*, input_shape=None,
 
     # Learn embedding for each image patch.
     x = img_input
-    x = layers.TimeDistributed(
-            layers.Dense(model_dim, name=name + '/embedding'),
-            name=name + '/time_distributed',
-        )(x)
+    x = PatchEncoder(num_patches=sequence_length, projection_dim=model_dim)(x)
+    # x = layers.TimeDistributed(
+    #         layers.Dense(model_dim, name=name + '/embedding'),
+    #         name=name + '/time_distributed',
+    #     )(x)
 
     # Add positional encoding.
     # TODO: is this the correct layer to use for positional encoding.
-    pe = keras_nlp.layers.PositionEmbedding(sequence_length=sequence_length, name=name + '/pe')(x)
-    x = layers.Add(name=name + '/add_pe')([x, pe])
+    # pe = keras_nlp.layers.PositionEmbedding(sequence_length=sequence_length, name=name + '/pe')(x)
+    # x = layers.Add(name=name + '/add_pe')([x, pe])
 
     # Construct model.
     for i in range(N):
@@ -69,9 +71,13 @@ def ViT(*, input_shape=None,
 
     # Add final MLP layer if necessary.
     if include_top:
+        # Experiments:
         # Get the first element in the patch dimension.
         # This will learn the context of the whole image.
-        x = x[:, 0, :]
+        # x = x[:, 0, :]
+
+        # Or, we can just take the average across the second dimension.
+        x = layers.GlobalAveragePooling1D(name=name + '/avg_patches')(x)
 
         # Pass this context vector to the MLP layer to learn the class output.
         x = layers.Dense(classes, name=name + '/output')(x)
@@ -130,5 +136,16 @@ def _encoder_block(x, *, output_size=None, attention_heads=12, name=None):
     return x
 
 
-def _positional_encoding(x, name=None):
-    pass
+class PatchEncoder(layers.Layer):
+    def __init__(self, num_patches, projection_dim):
+        super(PatchEncoder, self).__init__()
+        self.num_patches = num_patches
+        self.projection = layers.Dense(units=projection_dim)
+        self.position_embedding = layers.Embedding(
+            input_dim=num_patches, output_dim=projection_dim
+        )
+
+    def call(self, patch):
+        positions = tf.range(start=0, limit=self.num_patches, delta=1)
+        encoded = self.projection(patch) + self.position_embedding(positions)
+        return encoded
