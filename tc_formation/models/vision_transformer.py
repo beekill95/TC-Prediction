@@ -80,7 +80,23 @@ def ViT(*, input_shape=None,
         x = layers.GlobalAveragePooling1D(name=name + '/avg_patches')(x)
 
         # Pass this context vector to the MLP layer to learn the class output.
-        x = layers.Dense(classes, name=name + '/output')(x)
+        # x = layers.Dropout(0.5, name=name + '/dropout_01')(x)
+        x = layers.Dense(
+            2048,
+            activation='gelu',
+            kernel_initializer='he_uniform',
+            name=name + '/head_01')(x)
+        # x = layers.Dropout(0.5, name=name + '/dropout_02')(x)
+        x = layers.Dense(
+            1024,
+            activation='gelu',
+            kernel_initializer='he_uniform',
+            name=name + '/head_02')(x)
+
+        x = layers.Dense(
+            classes,
+            kernel_initializer='he_uniform',
+            name=name + '/output')(x)
         if not logits:
             x = layers.Activation('softmax', name=name + '/output/softmax')(x)
 
@@ -121,6 +137,7 @@ def _encoder_block(x, *, output_size=None, attention_heads=12, name=None):
     x = layers.MultiHeadAttention(
         num_heads=attention_heads,
         key_dim=S, # TODO
+        # dropout=0.1,
         name=name + '/multihead_att',
     )(x, x)
     x = layers.Add(name=name + '/residual_conn_1')([x, skip_conn])
@@ -128,7 +145,12 @@ def _encoder_block(x, *, output_size=None, attention_heads=12, name=None):
     # Linear layer.
     skip_conn = x
     x = layers.LayerNormalization(name=name + 'ln_2')(x)
-    x = layers.Dense(output_size, name=name + '/dense')(x)
+    x = layers.Dense(
+        output_size,
+        activation='gelu',
+        kernel_initializer='he_uniform',
+        name=name + '/dense')(x)
+    # x = layers.Dropout(0.1)(x)
 
     # Output
     x = layers.Add(name=name + '/residual_conn_2')([x, skip_conn])
@@ -140,7 +162,10 @@ class PatchEncoder(layers.Layer):
     def __init__(self, num_patches, projection_dim):
         super(PatchEncoder, self).__init__()
         self.num_patches = num_patches
-        self.projection = layers.Dense(units=projection_dim)
+        self.projection = layers.Dense(
+            kernel_initializer='he_uniform',
+            activation='gelu',
+            units=projection_dim)
         self.position_embedding = layers.Embedding(
             input_dim=num_patches, output_dim=projection_dim
         )

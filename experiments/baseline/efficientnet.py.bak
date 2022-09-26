@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.0
+#       jupytext_version: 1.13.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -14,18 +14,19 @@
 # ---
 
 # +
-import sys
-sys.path.append('..')
+import sys  # noqa
+sys.path.append('..')  # noqa
 
 import data
 import tf_metrics as tfm
 import tensorflow.keras as keras
 import tensorflow as tf
+import tensorflow_addons as tfa
 # -
 
-# Use ResNet V2
+# Use EfficientNet
 
-model = keras.applications.ResNet50V2(
+model = keras.applications.EfficientNetB1(
     input_shape=(41, 181, 5),
     weights=None,
     include_top=True,
@@ -37,7 +38,8 @@ model = keras.applications.ResNet50V2(
 
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
@@ -51,6 +53,7 @@ model.compile(
 downsampled_training = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
     batch_size=64,
+    shuffle=True,
     negative_samples_ratio=3)
 validation = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_val')
@@ -61,11 +64,10 @@ validation = data.load_data(
 
 epochs = 50
 model.fit(
-    downsampled_training.shuffle(128),
+    downsampled_training,
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 3., 0: 1.},
-    shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
             monitor='val_f1_score',
@@ -89,13 +91,13 @@ model.evaluate(testing)
 full_training = data.load_data(
     '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb_train',
     batch_size=64,
+    shuffle=True,
 )
 model.fit(
-    full_training.shuffle(128),
+    full_training,
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 3., 0: 1.},
-    shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
             monitor='val_f1_score',
@@ -110,4 +112,3 @@ model.fit(
 predictions = model.predict(testing)
 print(predictions)
 model.evaluate(testing)
-

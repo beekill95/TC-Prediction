@@ -36,13 +36,16 @@ from datetime import datetime
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
+# +
 exp_name = 'baseline_resnet'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
 #data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
+# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
 data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -57,12 +60,14 @@ subset = dict(
 )
 data_shape = (41, 161, 13)
 
+# + tags=[]
 model = resnet.ResNet18(
     input_shape=data_shape,
     include_top=True,
     classes=1,
     classifier_activation=None,)
 model.summary()
+# -
 
 # Build the model using BinaryCrossentropy loss
 
@@ -74,7 +79,7 @@ model.compile(
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
-        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+        tfm.CustomF1Score(from_logits=True),
     ]
 )
 
@@ -151,20 +156,56 @@ first_stage_history = model.fit(
 plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
-testing = data.load_data_v1(
-    test_path,
-    data_shape=data_shape,
-    subset=subset,
-    group_same_observations=True,
-)
-testing = testing.map(normalize_data)
-model.evaluate(
-    testing,
-    callbacks=[
-        keras.callbacks.TensorBoard(
-            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
-        ),
-    ])
+leadtimes = [6, 12, 18, 24, 30, 36, 42, 48]
+for l in leadtimes:
+    print(f'=== At leadtime {l} ===')
+    testing = data.load_data_v1(
+        test_path,
+        data_shape=data_shape,
+        subset=subset,
+        group_same_observations=True,
+        leadtime=l,
+    )
+    testing = testing.map(normalize_data)
+    model.evaluate(
+        testing,
+        callbacks=[
+            keras.callbacks.TensorBoard(
+                log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
+            ),
+        ])
+
+# Obtain performance value at different thresholds.
+
+# +
+thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+for l in leadtimes:
+    print(f'=== At leadtime {l} ===')
+    testing = data.load_data_v1(
+        test_path,
+        data_shape=data_shape,
+        subset=subset,
+        group_same_observations=True,
+        leadtime=l,
+    )
+    testing = testing.map(normalize_data)
+
+    for t in thresholds:
+        model.compile(
+            optimizer='adam',
+            # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+            loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+            metrics=[
+                'binary_accuracy',
+                tfm.RecallScore(thresholds=t, from_logits=True, name='recall'),
+                tfm.PrecisionScore(thresholds=t, from_logits=True, name='precision'),
+                tfm.CustomF1Score(thresholds=t, from_logits=True, name='f1'),
+            ]
+        )
+        print(f'=== Threshold {t} ===')
+        model.evaluate(testing)
+# -
 
 # # Second stage
 #

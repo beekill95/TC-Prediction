@@ -117,13 +117,14 @@ class TimeSeriesTropicalCycloneDataLoader:
         # Convert to tf dataset.
         # dataset = self._process_to_dataset(tc_df, **kwargs)
 
+        if caching:
+            dataset = dataset.cache()
+
         if shuffle:
             dataset = dataset.shuffle(batch_size * 3)
 
-        if caching:
-            dataset = dataset.cache()
         dataset = dataset.batch(batch_size)
-        return dataset.prefetch(1)
+        return dataset.prefetch(tf.data.AUTOTUNE)
 
     def load_dataset(
             self,

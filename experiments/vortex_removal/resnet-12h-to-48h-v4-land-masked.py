@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.0
+#       jupytext_version: 1.13.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -14,10 +14,6 @@
 # ---
 
 # %cd ../..
-
-# +
-#import sys  # noqa
-#sys.path.append('../..')  # noqa
 
 from tc_formation import plot
 from tc_formation.data import data
@@ -29,20 +25,17 @@ import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
-# -
+import numpy as np
+import xarray as xr
 
-# Use ResNet
+# # ResNet with Vortex Removed Data 12h to 48h
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_resnet'
+exp_name = 'baseline_resnet_vortex_removed_12h_to_48h'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-#data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h_WP_EP_v4.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -57,12 +50,14 @@ subset = dict(
 )
 data_shape = (41, 161, 13)
 
-model = resnet.ResNet18(
+# + tags=[]
+model = resnet.ResNet18v2(
     input_shape=data_shape,
     include_top=True,
     classes=1,
     classifier_activation=None,)
 model.summary()
+# -
 
 # Build the model using BinaryCrossentropy loss
 
@@ -88,13 +83,14 @@ full_training = data.load_data_v1(
     subset=subset,
     group_same_observations=False,
 )
-# downsampled_training = data.load_data(
+# downsampled_training = data.load_data_v1(
 #     train_path,
 #     data_shape=data_shape,
 #     batch_size=64,
 #     shuffle=True,
 #     subset=subset,
-#     negative_samples_ratio=1)
+#     negative_samples_ratio=1,
+# )
 validation = data.load_data_v1(
     val_path,
     data_shape=data_shape,
@@ -116,6 +112,27 @@ full_training = full_training.map(normalize_data)
 validation = validation.map(normalize_data)
 # -
 
+# Constructing mask for ocean only.
+
+# +
+from global_land_mask import globe # noqa
+
+
+# Not the best idea, but too lazy!!!
+ds = xr.load_dataset('data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/fnl_20180713_00_00.nc', engine='netcdf4')
+lon = np.where(ds.lon < 180.0, ds.lon, 360.0 - ds.lon)
+yy, xx = np.meshgrid(lon, ds.lat)
+ocean_mask = globe.is_ocean(xx, yy)
+ocean_mask = np.expand_dims(ocean_mask, axis=(0, -1))
+
+def ocean_only(x, y):
+    return ocean_mask * x, y
+
+full_training = full_training.map(ocean_only)
+# downsampled_training = downsampled_training.map(ocean_only)
+validation = validation.map(ocean_only)
+# -
+
 # # First stage
 #
 # train the model on the down-sampled data.
@@ -127,7 +144,7 @@ first_stage_history = model.fit(
     full_training,
     epochs=epochs,
     validation_data=validation,
-    class_weight={1: 10., 0: 1.},
+    # class_weight={1: 10., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
@@ -158,44 +175,16 @@ testing = data.load_data_v1(
     group_same_observations=True,
 )
 testing = testing.map(normalize_data)
-model.evaluate(
-    testing,
-    callbacks=[
-        keras.callbacks.TensorBoard(
-            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
-        ),
-    ])
+model.evaluate(testing)
 
-# # Second stage
-#
-# train the model on full dataset.
-
-# +
-# second_stage_history = model.fit(
-#     full_training,
-#     epochs=epochs,
-#     validation_data=validation,
-#     class_weight={1: 10., 0: 1.},
-#     shuffle=True,
-#     callbacks=[
-#         keras.callbacks.EarlyStopping(
-#             monitor='val_f1_score',
-#             mode='max',
-#             verbose=1,
-#             patience=20,
-#             restore_best_weights=True),
-#         keras.callbacks.ModelCheckpoint(
-#             filepath=f"outputs/{exp_name}_{runtime}_2nd_ckp",
-#             monitor='val_f1_score',
-#             mode='max',
-#             save_best_only=True,
-#         ),
-#     ])
-
-
-# plot.plot_training_history(second_stage_history, "Second stage training")
-# -
-
-# After the model is trained, we will test it on test data.
-
-# model.evaluate(testing)
+leadtimes = range(6, 49, 6)
+for leadtime in leadtimes:
+    testing = data.load_data_v1(
+        test_path,
+        data_shape=data_shape,
+        subset=subset,
+        group_same_observations=True,
+        leadtime=leadtime,
+    )
+    testing = testing.map(normalize_data)
+    model.evaluate(testing)

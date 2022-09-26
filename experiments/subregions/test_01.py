@@ -75,14 +75,30 @@ data_loader = subregions.data_loader.SubRegionsTropicalCycloneDataLoader(
 )
 training = data_loader.load_dataset(
     train_path,
-    batch_size=2,
+    batch_size=512,
     shuffle=True,
     negative_subregions_ratio=3,
+    caching=False,
+)
+validation = data_loader.load_dataset(
+    train_path,
+    batch_size=512,
+    shuffle=False,
+    negative_subregions_ratio=None,
 )
 
 print('=== Single Time Step ===')
+i = 0
 training_iter = iter(training)
 for X, y in training_iter:
-    print(X.shape)
-    break
+    i += 1
+    print(i, X.shape, y.shape)
 
+
+# ## Test Validation without negative subsample
+
+val_iter = iter(validation)
+i = 0
+for X, y in val_iter:
+    i += 1
+    print(i, X.shape, y.shape)

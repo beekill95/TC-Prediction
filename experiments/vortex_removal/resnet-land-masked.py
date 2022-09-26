@@ -25,13 +25,15 @@ import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
+import numpy as np
+import xarray as xr
 
 # # ResNet with Vortex Removed Data
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_resnet_vortex_removed'
+exp_name = 'baseline_resnet_vortex_removed_land_masked'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v4.csv'
 train_path = data_path.replace('.csv', '_train.csv')
@@ -111,6 +113,27 @@ downsampled_training = downsampled_training.map(normalize_data)
 validation = validation.map(normalize_data)
 # -
 
+# Constructing mask for ocean only.
+
+# +
+from global_land_mask import globe # noqa
+
+
+# Not the best idea, but too lazy!!!
+ds = xr.load_dataset('data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/fnl_20180713_00_00.nc', engine='netcdf4')
+lon = np.where(ds.lon < 180.0, ds.lon, 360.0 - ds.lon)
+yy, xx = np.meshgrid(lon, ds.lat)
+ocean_mask = globe.is_ocean(xx, yy)
+ocean_mask = np.expand_dims(ocean_mask, axis=(0, -1))
+
+def ocean_only(x, y):
+    return ocean_mask * x, y
+
+full_training = full_training.map(ocean_only)
+downsampled_training = downsampled_training.map(ocean_only)
+validation = validation.map(ocean_only)
+# -
+
 # # First stage
 #
 # train the model on the down-sampled data.
@@ -118,8 +141,8 @@ validation = validation.map(normalize_data)
 # +
 epochs = 150
 first_stage_history = model.fit(
-    downsampled_training,
-    # full_training,
+    # downsampled_training,
+    full_training,
     epochs=epochs,
     validation_data=validation,
     class_weight={1: 10., 0: 1.},
@@ -160,9 +183,3 @@ model.evaluate(
             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
     ])
-
-# ## Integrated Gradient
-#
-# To visualize what the ML model has learned.
-
-

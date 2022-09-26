@@ -2,6 +2,7 @@
 
 # Activate conda environment with tensorflow-gpu
 conda activate tc_updated_2
+module load deeplearning
 
 # Then, forward port back to h2
 server=${1-h2}

@@ -15,10 +15,6 @@
 
 # %cd ../..
 
-# +
-#import sys  # noqa
-#sys.path.append('../..')  # noqa
-
 from tc_formation import plot
 from tc_formation.data import data
 import tc_formation.models.layers
@@ -29,20 +25,15 @@ import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
-# -
 
-# Use ResNet
+# # ResNet
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_resnet'
+exp_name = 'baseline_resnet_theanh_baseline'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_test/6h_700mb'
-#data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
-# data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/theanh_WPAC_baseline/tc_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -55,26 +46,29 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (41, 161, 13)
+data_shape = (218, 434, 12)
 
+# + tags=[]
 model = resnet.ResNet18(
-    input_shape=data_shape,
+    input_shape=((218 // 2, 434 // 2, 12)),
     include_top=True,
     classes=1,
     classifier_activation=None,)
 model.summary()
+# -
 
 # Build the model using BinaryCrossentropy loss
 
 model.compile(
     optimizer='adam',
-    # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    # loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
-        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+        # tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+        tfm.CustomF1Score(from_logits=True),
     ]
 )
 
@@ -88,6 +82,7 @@ full_training = data.load_data_v1(
     subset=subset,
     group_same_observations=False,
 )
+print('Done loading full training ....')
 # downsampled_training = data.load_data(
 #     train_path,
 #     data_shape=data_shape,
@@ -102,18 +97,22 @@ validation = data.load_data_v1(
     group_same_observations=True,
 )
 
-features = full_training.map(lambda X, _: X)
+# +
+def normalize_data(x, y):
+    return normalizer(x[:, ::2, ::2]), y
+    # return x[:, ::2, ::2], y
+    # return x[:, ::4, ::4], y
+
+def remove_nans(x, y):
+    return tf.where(tf.math.is_nan(x), tf.zeros_like(x), x), y
+
+features = full_training.map(remove_nans).map(lambda X, _: X[:, ::4, ::4])
 normalizer = preprocessing.Normalization()
 normalizer.adapt(features)
 
-# +
-def normalize_data(x, y):
-    return normalizer(x), y
-
-
-full_training = full_training.map(normalize_data)
+full_training = full_training.map(remove_nans).map(normalize_data)
 # downsampled_training = downsampled_training.map(normalize_data)
-validation = validation.map(normalize_data)
+validation = validation.map(remove_nans).map(normalize_data)
 # -
 
 # # First stage
@@ -157,7 +156,7 @@ testing = data.load_data_v1(
     subset=subset,
     group_same_observations=True,
 )
-testing = testing.map(normalize_data)
+testing = testing.map(remove_nans).map(normalize_data)
 model.evaluate(
     testing,
     callbacks=[
@@ -165,6 +164,28 @@ model.evaluate(
             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
     ])
+
+
+# +
+from scipy.special import expit # noqa
+import numpy as np # noqa
+import pandas as pd # noqa
+
+predictions = model.predict(testing)
+predictions = expit(predictions)
+predictions = np.where(predictions > .5, 1, 0)
+
+# +
+testing_df: pd.DataFrame = pd.read_csv(test_path)
+testing_df['Date'] = pd.to_datetime(testing_df['Date'], format='%Y-%m-%d %H:%M:%S')
+testing_df['Year'] = testing_df['Date'].apply(lambda d: d.year)
+testing_df['Prediction'] = predictions
+
+yearly = testing_df[['Year', 'Prediction']].groupby('Year').sum()
+for _, row in yearly.iterrows():
+    print(row)
+#     print(row['Name'], row['Prediction'])
+
 
 # # Second stage
 #

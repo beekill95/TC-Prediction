@@ -19,6 +19,7 @@ import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
 from tc_formation.models.vision_transformer import ViT
 from tc_formation.models.patches_layer import Patches
+import tensorflow_addons as tfa
 
 # # Visual Transformer Test with Cifar
 
@@ -30,7 +31,7 @@ input_shape = (32, 32, 3)
 print(f"x_train shape: {x_train.shape} - y_train shape: {y_train.shape}")
 print(f"x_test shape: {x_test.shape} - y_test shape: {y_test.shape}")
 
-# +
+# + tags=[]
 image_size = 64
 patch_size = 6
 
@@ -64,9 +65,13 @@ vit = ViT(
     classes=num_classes)
 vit.summary()
 
-# +
+# + tags=[]
+optimizer = tfa.optimizers.AdamW(
+    learning_rate=0.001, weight_decay=0.0001
+)
+
 vit.compile(
-    optimizer='adam',
+    optimizer=optimizer,
     loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
     metrics=[
         keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
@@ -82,3 +87,8 @@ vit.fit(
     validation_split=0.1,
     callbacks=[],
 )
+# -
+
+_, accuracy, top_5_accuracy = vit.evaluate(x_test, y_test)
+print(f"Test accuracy: {round(accuracy * 100, 2)}%")
+print(f"Test top 5 accuracy: {round(top_5_accuracy * 100, 2)}%")

@@ -32,10 +32,9 @@ import xarray as xr
 
 # # Unet Spatial Statistics
 
-data_path = 'data/theanh_WPAC_RCP45/tc_12h_2030.csv'
+data_path = 'data/theanh_WPAC_baseline/tc_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
-test_path = data_path.replace('.csv', '_test.csv')
 subset = dict(
     absvprs=[900, 750],
     rhprs=[750],
@@ -45,13 +44,25 @@ subset = dict(
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
 )
-data_shape = (454, 873, 12)
+subset = dict(
+    hgtprs=[700, 500, 250],
+    ugrdprs=[700, 500, 250],
+    vgrdprs=[700, 500, 250],
+    capesfc=None,
+    absvprs=None,
+    rhprs=None,
+    tmpprs=None,
+    vvelprs=None,
+    tmpsfc=None,
+    slp=None,
+)
+data_shape = (218, 434, 9)
 use_softmax = False
 
 # Reload the model from checkpoint.
 
 # + tags=[]
-model_path = 'outputs/tc_grid_prob_unet_RCP45_2030_2022_Jul_27_00_29_ckp_best_val/'
+model_path = 'outputs/tc_grid_prob_unet_baseline_12h_2022_Sep_13_10_34_ckp_best_val'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()
@@ -66,7 +77,7 @@ def remove_nans(x, y):
     return tf.where(tf.math.is_nan(x), tf.zeros_like(x), x), y
 
 def spatial_scale(x, y):
-    return x[:, ::4, ::4], y[:, ::4, ::4]
+    return x[:, ::2, ::2], y[:, ::2, ::2]
 
 
 tc_avg_radius_lat_deg = 3
@@ -79,8 +90,11 @@ data_loader = ts_data.TropicalCycloneWithGridProbabilityDataLoader(
 )
 # -
 
+# Don't mind the naming,
+# this particular model is trained on train dataset,
+# and we want to see what kind of performance on training data.
 testing = data_loader.load_dataset(
-    test_path,
+    train_path,
     batch_size=64,
 ).map(spatial_scale).map(remove_nans)
 predictions = model.predict(testing)
@@ -116,19 +130,26 @@ def plot_tc_occurence_prob(
     cs = basemap.contourf(lats, longs, prob, cmap='OrRd', levels=np.arange(0, 1.01, 0.05))
     basemap.colorbar(cs, "right", size="5%", pad="2%")
 
-test_df = pd.read_csv(test_path)
+# Similar to the above.
+test_df = pd.read_csv(train_path)
+with_tc_mask = test_df['TC'] == 1
+test_df_with_tc = test_df[with_tc_mask]
 center_locator = unet_track.UnetPredictionCenter()
-pred_range = slice(20, 35)
-for path, pred in zip(test_df['Path'][pred_range], predictions[pred_range]):
+pred_range = slice(50, 65)
+for path, pred, lat, lon in zip(test_df_with_tc['Path'][pred_range],
+                                predictions[with_tc_mask][pred_range],
+                                test_df_with_tc['Latitude'][pred_range],
+                                test_df_with_tc['Longitude'][pred_range]):
     centers = center_locator.get_centers(pred)
     distribution = unet_track.tc_formation_spatial_distribution(
         domain_size=(114, 219),
         centers=centers,
     )
     print(path, centers)
+    print('truth', lat, lon)
 
     datasets = xr.load_dataset(path)
-    datasets = datasets.sel(dict(lat=datasets['lat'][::4], lon=datasets['lon'][::4]))
+    datasets = datasets.sel(dict(lat=datasets['lat'][::2], lon=datasets['lon'][::2]))
     plot_tc_occurence_prob(dataset=datasets, prob=pred.squeeze())
     plt.show()
     plt.close()
@@ -159,12 +180,12 @@ def plot_tc_formation_predicted_spatial_distribution(
 
 
 cur_year = test_df['Year'].iloc[0]
-tc_dist = np.zeros((114, 219))
+tc_dist = np.zeros((109, 217))
 for path, pred, year in zip(test_df['Path'], predictions, test_df['Year']):
     if year != cur_year:
         # Load the dataset to get lat and lon.
         ds = xr.load_dataset(path)
-        ds = ds.sel(dict(lat=ds['lat'][::4], lon=ds['lon'][::4]))
+        ds = ds.sel(dict(lat=ds['lat'][::2], lon=ds['lon'][::2]))
 
         # Plot the result
         plot_tc_formation_predicted_spatial_distribution(dataset=ds, distribution=tc_dist)
@@ -174,7 +195,7 @@ for path, pred, year in zip(test_df['Path'], predictions, test_df['Year']):
         plt.close()
 
         # Reset the dist.
-        tc_dist = np.zeros((114, 219))
+        tc_dist = np.zeros((109, 217))
 
         # Move to new year.
         cur_year = year
@@ -183,7 +204,7 @@ for path, pred, year in zip(test_df['Path'], predictions, test_df['Year']):
     # then increase the count in `tc_dist`.
     centers = center_locator.get_centers(pred)
     distribution = unet_track.tc_formation_spatial_distribution(
-        domain_size=(114, 219),
+        domain_size=(109, 217),
         centers=centers,
     )
     tc_dist += distribution

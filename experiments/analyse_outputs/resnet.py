@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.13.8
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -101,13 +101,20 @@ test_tc['Predicted'] = np.where(pred >= threshold, 1, 0).flatten()
 
 matched = test_tc[test_tc['TC'] == test_tc['Predicted']]
 difference = test_tc[test_tc['TC'] != test_tc['Predicted']]
-
-
 # -
 
 # # Plot Stuffs
 
 # +
+size = '30'
+params = {'legend.fontsize': size,
+          'figure.titlesize': size,
+         'axes.labelsize': size,
+         'axes.titlesize': size,
+         'xtick.labelsize': size,
+         'ytick.labelsize': size}
+plt.rcParams.update(params)
+
 @_d._with_axes
 @_d._with_basemap
 def plot_SST(dataset, basemap=None, ax=None, **kwargs):
@@ -117,7 +124,7 @@ def plot_SST(dataset, basemap=None, ax=None, **kwargs):
 
 def plot_stuff(ds, pressure_level, ax):
     # Plot Relative Humidity
-    plt_obs.plot_variable(
+    plt_obs.plot_variablef(
         dataset=ds,
         variable='rhprs',
         pressure_level=pressure_level,
@@ -175,7 +182,7 @@ for _, row in false_negatives.iterrows():
     fig, axs = plt.subplots(nrows=2, figsize=(30, 16), sharex=True)
 
     fig.suptitle(
-        f'''False Negative: Wind field observed on {row["Date"]},
+        f'''False Negative: Wind field observed on {row["Date"]},z
             there will be TC at {row["Latitude"]} lat, {row["Longitude"]} lon  on {row["First Observed"]}''')
     
     axs[0].set_title('Wind Field, SST, and RH at 850mb')

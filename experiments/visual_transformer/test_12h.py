@@ -28,18 +28,18 @@ from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
 
-# # Visual Transformer for Single Leadtime
+# # Test for Single Leadtime
 
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_vit_12h'
+exp_name = 'baseline_test_12h'
 runtime = datetime.now().strftime('%Y_%m_%d_%H_%M')
 # data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h_WP_EP_v3.csv'
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v3.csv'
-train_path = data_path.replace('.csv', '_train.csv')
-val_path = data_path.replace('.csv', '_val.csv')
-test_path = data_path.replace('.csv', '_test.csv')
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v3.csv.updated'
+train_path = data_path.replace('.csv.updated', '_train.csv.updated')
+val_path = data_path.replace('.csv.updated', '_val.csv.updated')
+test_path = data_path.replace('.csv.updated', '_test.csv.updated')
 subset = dict(
     absvprs=[900, 750],
     rhprs=[750],
@@ -67,33 +67,20 @@ patch_size = 16
 leadtime = 12
 
 # + tags=[]
-input_tensor = layers.Input(data_shape)
-input_tensor = Patches(patch_size=16, flatten=True)(input_tensor)
-model = ViT(
-    input_tensor=input_tensor,
-    include_top=True,
-    sequence_length=33,
-    N=1,
-    attention_heads=1,
-    model_dim=64,
-    classes=1,
-    name='Vit_12h')
-model.summary()
+# input_tensor = layers.Input(data_shape)
+# input_tensor = Patches(patch_size=16, flatten=True)(input_tensor)
+# model = ViT(
+#     input_tensor=input_tensor,
+#     include_top=True,
+#     sequence_length=33,
+#     N=1,
+#     attention_heads=1,
+#     model_dim=64,
+#     classes=1,
+#     name='Vit_12h')
 # -
 
 # Build the model using BinaryCrossentropy loss
-
-model.compile(
-    optimizer='adam',
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    # loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
-    metrics=[
-        'binary_accuracy',
-        tfm.RecallScore(from_logits=True),
-        tfm.PrecisionScore(from_logits=True),
-        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
-    ]
-)
 
 # Load our training and validation data.
 
@@ -116,6 +103,36 @@ full_training = full_training.map(normalize_data)
 validation = validation.map(normalize_data)
 # -
 
+# ## Model
+
+# +
+# tf.keras.backend.clear_session()
+model = keras.Sequential([
+    layers.Input(data_shape),
+    layers.Conv2D(256, 3, activation='relu'),
+    # layers.AveragePooling2D(pool_size=(2, 2), strides=2),
+    layers.MaxPooling2D(pool_size=(2, 2), strides=2),
+    layers.Conv2D(256, 3, activation='relu'),
+    layers.GlobalAveragePooling2D(),
+    layers.Flatten(),
+    layers.Dense(1),
+])
+model.build()
+model.summary()
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+    # loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+    metrics=[
+        'binary_accuracy',
+        tfm.RecallScore(from_logits=True),
+        tfm.PrecisionScore(from_logits=True),
+        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+    ]
+)
+# -
+
 # # First stage
 #
 # train the model on the down-sampled data.
@@ -126,12 +143,13 @@ first_stage_history = model.fit(
     full_training,
     epochs=epochs,
     validation_data=validation,
-    class_weight={1: 1., 0: 1.},
+    class_weight={1: 20., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(
-            monitor='val_f1_score',
-            mode='max',
+            # monitor='val_f1_score',
+            monitor='val_loss',
+            mode='min',
             verbose=1,
             patience=50,
             restore_best_weights=True),

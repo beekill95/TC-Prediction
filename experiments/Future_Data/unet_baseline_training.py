@@ -184,7 +184,7 @@ model.fit(
         ),
         keras.callbacks.ModelCheckpoint(
             filepath=f"outputs/{exp_name}_{runtime}_ckp_best_val",
-            monitor='val_IoU',
+            monitor='IoU',
             mode='max',
             save_best_only=True,
         ),

@@ -83,6 +83,7 @@ class CustomF1Score(tf.keras.metrics.Metric):
     def result(self):
         p = self.precision_fn.result()
         r = self.recall_fn.result()
+        # return tf.reduce_mean(2 * p * r / (p + r + 1e-6))
         return 2 * p * r / (p + r + 1e-6)
 
     def reset_state(self):

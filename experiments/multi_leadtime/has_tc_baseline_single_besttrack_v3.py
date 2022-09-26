@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.13.8
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -25,6 +25,7 @@ import tensorflow as tf
 from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 from datetime import datetime
+print(tf.__version__, tf.config.list_physical_devices('GPU'))
 
 # # Baseline for Single Lead Time
 
@@ -108,7 +109,7 @@ model.compile(
 
 # Load our training and validation data.
 
-full_training = data.load_data_v1(
+full_training = data.load_data_v2(
     train_path,
     data_shape=data_shape,
     batch_size=64,
@@ -117,20 +118,21 @@ full_training = data.load_data_v1(
     leadtime=leadtime,
     group_same_observations=False,
 )
-downsampled_training = data.load_data_v1(
+downsampled_training = data.load_data_v2(
     train_path,
     data_shape=data_shape,
     batch_size=64,
     shuffle=True,
     subset=subset,
-    negative_samples_ratio=None,
-    other_happening_tc_ratio=4)
-validation = data.load_data_v1(
+    negative_samples_ratio=3,
+    other_happening_tc_ratio=None)
+validation = data.load_data_v2(
     val_path,
     data_shape=data_shape,
     subset=subset,
     leadtime=leadtime,
     group_same_observations=True,
+    negative_samples_ratio=3,
     other_happening_tc_ratio=None
 )
 

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.13.8
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -140,11 +140,20 @@ sigmoid = 1 / (1 + tf.exp(-model.outputs[0]))
 aug_model = keras.Model(model.inputs, sigmoid)
 
 # +
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt # noqa
+from matplotlib.patches import Rectangle # noqa
 from tc_formation.plots import observations as plt_obs # noqa
 from tc_formation.plots import decorators as _d # noqa
 from tc_formation.model_explanation import integrated_gradient as IG # noqa
 from tc_formation.plots.integrated_gradient_visualizer import IntegratedGradientVisualizer # noqa
+
+size = '30'
+params = {'legend.fontsize': size,
+         'axes.labelsize': size,
+         'axes.titlesize': size,
+         'xtick.labelsize': size,
+         'ytick.labelsize': size}
+plt.rcParams.update(params)
 
 @_d._with_axes
 @_d._with_basemap
@@ -152,6 +161,12 @@ def plot_SST(dataset, basemap=None, ax=None, **kwargs):
     lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
     cs = basemap.contour(lats, longs, dataset['tmpsfc'], levels=np.arange(270, 310, 2), cmap='Reds')
     ax.clabel(cs, inline=True, fontsize=20)
+    
+def plot_rectangle(center, ax, color='blue', size=5):
+    half_size = size / 2.0
+    center = np.asarray(center)
+    rec = Rectangle(center - half_size, size, size, color=color, fill=False, lw=8.)
+    ax.add_patch(rec)
 
 def plot_stuff(ds, pressure_level, ax):
     # Plot Relative Humidity
@@ -173,10 +188,10 @@ def plot_stuff(ds, pressure_level, ax):
 # +
 import xarray as xr # noqa
 
-def plot_samples(true_positives_df):
+def plot_samples(df):
     visualizer = IntegratedGradientVisualizer()
 
-    for _, row in true_positives_df.iterrows():
+    for _, row in df.iterrows():
         ds = xr.open_dataset(row['Path'])
         print(row['Path'], row['Pred Prob'], row['Predicted'])
         print('First Observed: ', row['First Observed'])
@@ -192,7 +207,7 @@ def plot_samples(true_positives_df):
 
         # Plot stuffs.
         fig, ax = plt.subplots(figsize=(30, 18))
-        ax.set_title('SST and RH at 850mb, and Model Spatial Attribution')
+        ax.set_title(f'SST at 850mb on date {row["Date"]}\nand Model Spatial Attribution for prediction on date {row["First Observed"]}')
 
         # Plot integrated result.
         a = visualizer.visualize(
@@ -206,6 +221,7 @@ def plot_samples(true_positives_df):
         )
 
         plot_stuff(ds, 850, ax=ax)
+        plot_rectangle((row["Longitude"], row["Latitude"]), size=10., ax=ax, color='darkorange')
 
         # Display the resulting plot.
         fig.tight_layout()

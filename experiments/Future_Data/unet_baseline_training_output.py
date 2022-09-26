@@ -13,12 +13,12 @@
 #     name: python3
 # ---
 
-# + papermill={"duration": 0.094264, "end_time": "2022-09-12T01:28:24.896612", "exception": false, "start_time": "2022-09-12T01:28:24.802348", "status": "completed"} tags=[]
+# + papermill={"duration": 0.132369, "end_time": "2022-09-13T14:33:45.472510", "exception": false, "start_time": "2022-09-13T14:33:45.340141", "status": "completed"} tags=[]
 # %cd ../..
 # %load_ext autoreload
 # %autoreload 2
 
-# + papermill={"duration": 18.921974, "end_time": "2022-09-12T01:28:43.824823", "exception": false, "start_time": "2022-09-12T01:28:24.902849", "status": "completed"} tags=[]
+# + papermill={"duration": 57.860586, "end_time": "2022-09-13T14:34:43.336690", "exception": false, "start_time": "2022-09-13T14:33:45.476104", "status": "completed"} tags=[]
 from datetime import datetime
 from tc_formation.models import unet
 from tc_formation import tf_metrics as tfm
@@ -31,13 +31,13 @@ from tensorflow.keras.layers.experimental import preprocessing
 import tensorflow_addons as tfa
 import xarray as xr
 
-# + [markdown] papermill={"duration": 0.005838, "end_time": "2022-09-12T01:28:43.837771", "exception": false, "start_time": "2022-09-12T01:28:43.831933", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.003225, "end_time": "2022-09-13T14:34:43.343766", "exception": false, "start_time": "2022-09-13T14:34:43.340541", "status": "completed"} tags=[]
 # # Predict TC Formation using Grid Probability
 
-# + [markdown] papermill={"duration": 0.005378, "end_time": "2022-09-12T01:28:43.848754", "exception": false, "start_time": "2022-09-12T01:28:43.843376", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.003039, "end_time": "2022-09-13T14:34:43.349966", "exception": false, "start_time": "2022-09-13T14:34:43.346927", "status": "completed"} tags=[]
 # Configurations to run for this experiment.
 
-# + papermill={"duration": 1.43231, "end_time": "2022-09-12T01:28:45.286566", "exception": false, "start_time": "2022-09-12T01:28:43.854256", "status": "completed"} tags=[]
+# + papermill={"duration": 1.502862, "end_time": "2022-09-13T14:34:44.855977", "exception": false, "start_time": "2022-09-13T14:34:43.353115", "status": "completed"} tags=[]
 exp_name = 'tc_grid_prob_unet_baseline_12h'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 data_path = 'data/theanh_WPAC_baseline/tc_12h.csv'
@@ -69,10 +69,10 @@ subset = dict(
 data_shape = (218, 434, 9)
 use_softmax = False
 
-# + [markdown] papermill={"duration": 0.005764, "end_time": "2022-09-12T01:28:45.299294", "exception": false, "start_time": "2022-09-12T01:28:45.293530", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.003309, "end_time": "2022-09-13T14:34:44.863183", "exception": false, "start_time": "2022-09-13T14:34:44.859874", "status": "completed"} tags=[]
 # Create U-Net model with normalization layer.
 
-# + papermill={"duration": 4.008066, "end_time": "2022-09-12T01:28:49.312900", "exception": false, "start_time": "2022-09-12T01:28:45.304834", "status": "completed"} tags=[]
+# + papermill={"duration": 5.161879, "end_time": "2022-09-13T14:34:50.028312", "exception": false, "start_time": "2022-09-13T14:34:44.866433", "status": "completed"} tags=[]
 input_layer = keras.Input((218 // 2, 434 // 2, 9))
 normalization_layer = preprocessing.Normalization()
 model = unet.Unet(
@@ -84,10 +84,10 @@ model = unet.Unet(
     filters_block=[64, 128, 256])
 model.summary()
 
-# + [markdown] papermill={"duration": 0.015648, "end_time": "2022-09-12T01:28:49.350928", "exception": false, "start_time": "2022-09-12T01:28:49.335280", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.007043, "end_time": "2022-09-13T14:34:50.044308", "exception": false, "start_time": "2022-09-13T14:34:50.037265", "status": "completed"} tags=[]
 # Then, we load the training and validation dataset.
 
-# + papermill={"duration": 234.525681, "end_time": "2022-09-12T01:32:43.892825", "exception": false, "start_time": "2022-09-12T01:28:49.367144", "status": "completed"} tags=[]
+# + papermill={"duration": 210.098208, "end_time": "2022-09-13T14:38:20.149448", "exception": false, "start_time": "2022-09-13T14:34:50.051240", "status": "completed"} tags=[]
 tc_avg_radius_lat_deg = 3
 data_loader = ts_data.TropicalCycloneWithGridProbabilityDataLoader(
     data_shape=data_shape,
@@ -105,11 +105,11 @@ training = data_loader.load_dataset(
 )
 validation = data_loader.load_dataset(val_path, batch_size=128)
 
-# + [markdown] papermill={"duration": 0.01572, "end_time": "2022-09-12T01:32:43.924455", "exception": false, "start_time": "2022-09-12T01:32:43.908735", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.007827, "end_time": "2022-09-13T14:38:20.165014", "exception": false, "start_time": "2022-09-13T14:38:20.157187", "status": "completed"} tags=[]
 # After that, we will initialize the normalization layer,
 # and compile the model.
 
-# + papermill={"duration": 1518.803176, "end_time": "2022-09-12T01:58:02.743349", "exception": false, "start_time": "2022-09-12T01:32:43.940173", "status": "completed"} tags=[]
+# + papermill={"duration": 1375.639524, "end_time": "2022-09-13T15:01:15.812013", "exception": false, "start_time": "2022-09-13T14:38:20.172489", "status": "completed"} tags=[]
 def remove_nans(x, y):
     return tf.where(tf.math.is_nan(x), tf.zeros_like(x), x), y
 
@@ -124,7 +124,7 @@ features = training.map(lambda feature, _: feature)
 normalization_layer.adapt(features)
 
 
-# + papermill={"duration": 2.510942, "end_time": "2022-09-12T01:58:05.275965", "exception": false, "start_time": "2022-09-12T01:58:02.765023", "status": "completed"} tags=[]
+# + papermill={"duration": 23.977399, "end_time": "2022-09-13T15:01:39.802008", "exception": false, "start_time": "2022-09-13T15:01:15.824609", "status": "completed"} tags=[]
 @hard_negative_mining
 def hard_negative_mined_sigmoid_focal_loss(y_true, y_pred):
     fl = tfa.losses.SigmoidFocalCrossEntropy()
@@ -167,10 +167,10 @@ model.compile(
         #tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
     ])
 
-# + [markdown] papermill={"duration": 0.016956, "end_time": "2022-09-12T01:58:05.311480", "exception": false, "start_time": "2022-09-12T01:58:05.294524", "status": "completed"} tags=[]
+# + [markdown] papermill={"duration": 0.007677, "end_time": "2022-09-13T15:01:39.817938", "exception": false, "start_time": "2022-09-13T15:01:39.810261", "status": "completed"} tags=[]
 # Finally, we can train the model!
 
-# + papermill={"duration": 17211.162049, "end_time": "2022-09-12T06:44:56.490306", "exception": false, "start_time": "2022-09-12T01:58:05.328257", "status": "completed"} tags=[]
+# + papermill={"duration": 10194.522386, "end_time": "2022-09-13T17:51:34.347832", "exception": false, "start_time": "2022-09-13T15:01:39.825446", "status": "completed"} tags=[]
 epochs = 500
 model.fit(
     training,
@@ -198,7 +198,7 @@ model.fit(
     ]
 )
 
-# + papermill={"duration": 17.063584, "end_time": "2022-09-12T06:45:14.256895", "exception": false, "start_time": "2022-09-12T06:44:57.193311", "status": "completed"} tags=[]
+# + papermill={"duration": 19.142783, "end_time": "2022-09-13T17:51:53.807687", "exception": false, "start_time": "2022-09-13T17:51:34.664904", "status": "completed"} tags=[]
 # testing = data_loader.load_dataset(
 #     test_path,
 #     batch_size=64,

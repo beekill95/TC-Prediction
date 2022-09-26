@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.13.8
 #   kernelspec:
 #     display_name: tc_updated_2
 #     language: python
@@ -30,6 +30,7 @@ import tensorflow as tf
 exp_name = 'twin_nn_vortex_tc_removal_12h'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v4.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -88,7 +89,7 @@ validation = (validation
 
 model = twin_nn.twin_nn.TwinNN(
     input_shape=data_shape,
-    fully_connected_hidden_layers=[256, 256],
+    fully_connected_hidden_layers=[100, 100],
     name='twin_nn',
 )
 model.summary()
@@ -98,8 +99,8 @@ model.summary()
 model.compile(
     optimizer='adam',
     loss=dict(
-        pos=twin_nn.loss.TwinNNLoss(label=1, C=5.0),
-        neg=twin_nn.loss.TwinNNLoss(label=-1, C=1.0),
+        pos=twin_nn.loss.TwinNNLoss(label=1, C=2.0),
+        neg=twin_nn.loss.TwinNNLoss(label=-1, C=2.0),
     ),
 )
 
@@ -159,6 +160,7 @@ testing = data.load_data_v1(
     data_shape=data_shape,
     subset=subset,
     group_same_observations=True,
+    leadtime=[12],
 )
 testing = testing.map(convert_0_label_to_neg_1)
 model.evaluate(testing)
@@ -174,5 +176,5 @@ for y, pos_dist, neg_dist in zip(y_true, raw_pred['pos'], raw_pred['neg']):
 
 print('==== Negative Labels ====')
 for y, pos_dist, neg_dist in zip(y_true, raw_pred['pos'], raw_pred['neg']):
-    if y == 0:
+    if y == -1:
         print(f'Label {y=} with distance to pos class {pos_dist} and neg class {neg_dist}')

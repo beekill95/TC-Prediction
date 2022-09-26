@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.14.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -42,7 +42,7 @@ runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 #data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_700mb'
 # data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/multilevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD/6h_700mb'
-data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/extracted_features/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -76,7 +76,7 @@ model.compile(
         'binary_accuracy',
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
-        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+        tfm.CustomF1Score(from_logits=True),
     ]
 )
 
@@ -167,6 +167,24 @@ model.evaluate(
             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
         ),
     ])
+
+# Obtain performance value at different thresholds.
+
+thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+for t in thresholds:
+    model.compile(
+        optimizer='adam',
+        # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+        loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
+        metrics=[
+            'binary_accuracy',
+            tfm.RecallScore(thresholds=t, from_logits=True),
+            tfm.PrecisionScore(thresholds=t, from_logits=True),
+            tfm.CustomF1Score(thresholds=t, from_logits=True),
+        ]
+    )
+    print(f'=== Threshold {t} ===')
+    model.evaluate(testing)
 
 # # Second stage
 #

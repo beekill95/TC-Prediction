@@ -327,6 +327,60 @@ def ResNet18(include_top=True,
     return _ResNet(stack_fn, False, True, 'resnet18', include_top,
                    input_tensor, input_shape, pooling, classes, **kwargs)
 
+
+def ResNet14(include_top=True,
+             input_tensor=None,
+             input_shape=None,
+             pooling=None,
+             classes=1000,
+             **kwargs):
+    """
+    Instantiates the ResNet18 architecture.
+    """
+
+    def stack_fn(x):
+        x = _stack0(x, 64, 2, stride1=1, name='conv2')
+        x = _stack0(x, 128, 2, name='conv3')
+        x = _stack0(x, 256, 2, name='conv4')
+        # x = _stack0(x, 512, 2, name='conv5')
+        return x
+
+    return _ResNet(stack_fn, False, True, 'resnet14', include_top,
+                   input_tensor, input_shape, pooling, classes, **kwargs)
+
+
+def ResNet10(include_top=True,
+             input_tensor=None,
+             input_shape=None,
+             pooling=None,
+             classes=1000,
+             **kwargs):
+    def stack_fn(x):
+        x = _stack0(x, 64, 2, stride1=1, name='conv2')
+        x = _stack0(x, 128, 2, name='conv3')
+        # x = _stack0(x, 256, 2, name='conv4')
+        # x = _stack0(x, 512, 2, name='conv5')
+        return x
+
+    return _ResNet(stack_fn, False, True, 'resnet10', include_top,
+                   input_tensor, input_shape, pooling, classes, **kwargs)
+
+def ResNet6(include_top=True,
+             input_tensor=None,
+             input_shape=None,
+             pooling=None,
+             classes=1000,
+             **kwargs):
+    def stack_fn(x):
+        x = _stack0(x, 64, 2, stride1=1, name='conv2')
+        # x = _stack0(x, 128, 2, name='conv3')
+        # x = _stack0(x, 256, 2, name='conv4')
+        # x = _stack0(x, 512, 2, name='conv5')
+        return x
+
+    return _ResNet(stack_fn, False, True, 'resnet6', include_top,
+                   input_tensor, input_shape, pooling, classes, **kwargs)
+
 def ResNet18v2(include_top=True,
              input_tensor=None,
              input_shape=None,

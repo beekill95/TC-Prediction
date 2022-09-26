@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.8
+#       jupytext_version: 1.14.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -16,7 +16,7 @@
 # %cd ../..
 
 from datetime import datetime
-from tc_formation.models import unet
+from tc_formation.models import unet_SAM
 from tc_formation import tf_metrics as tfm
 import tc_formation.metrics.bb as bb
 import tc_formation.data.time_series as ts_data
@@ -34,7 +34,7 @@ import xarray as xr
 # +
 exp_name = 'tc_grid_prob_unet'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h_WP_EP_v3.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -80,13 +80,13 @@ use_softmax = False
 
 input_layer = keras.Input(data_shape)
 normalization_layer = preprocessing.Normalization()
-model = unet.Unet(
+model = unet_SAM.UnetCBAM(
     input_tensor=normalization_layer(input_layer),
     model_name='unet',
     classifier_activation='sigmoid' if not use_softmax else 'softmax',
     output_classes=1 if not use_softmax else 2,
     decoder_shortcut_mode='add',
-    filters_block=[64, 128, 256, 512, 1024])
+    filters_block=[64, 128, 256, 512])
 model.summary()
 
 # Then, we load the training and validation dataset.
@@ -167,6 +167,7 @@ model.fit(
     training,
     epochs=epochs,
     validation_data=validation,
+    validation_freq=10,
     shuffle=True,
     callbacks=[
         keras.callbacks.TensorBoard(
@@ -182,7 +183,7 @@ model.fit(
             monitor='val_IoU',
             mode='max',
             verbose=1,
-            patience=100,
+            patience=20,
             restore_best_weights=True
         ),
     ]

@@ -28,14 +28,14 @@ import tc_formation.data.data as tcdata
 
 # ## Model Loading
 
-model_path = 'outputs/baseline_resnet_vortex_removed_2022_Mar_31_10_26_1st_ckp/'
+model_path = 'outputs/baseline_resnet_vortex_removed_12h_to_48h_2022_Apr_04_15_09_1st_ckp/'
 model = keras.models.load_model(model_path, compile=False)
 model.trainable = False
 model.summary()
 
 # ## Data Loading
 
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v4.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -171,21 +171,6 @@ def plot_stuff(ds, pressure_level, ax):
 
 
 # +
-from global_land_mask import globe
-import xarray as xr # noqa
-
-
-fig, ax = plt.subplots(figsize=(15, 10))
-ds = xr.load_dataset('data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/fnl_20180713_00_00.nc', engine='netcdf4')
-lon = np.where(ds.lon < 180.0, ds.lon, 360.0 - ds.lon)
-yy, xx = np.meshgrid(lon, ds.lat)
-ocean_mask = globe.is_ocean(xx, yy)
-cs = ax.imshow(ocean_mask)
-fig.colorbar(cs, ax=ax)
-ax.invert_yaxis()
-print(lon)
-
-# +
 import xarray as xr # noqa
 from ast import literal_eval # noqa
 from matplotlib.patches import Rectangle
@@ -199,16 +184,16 @@ def plot_rectangle(center, ax, color, size=5):
     ax.add_patch(rec)
 
 
-def plot_samples(true_positives_df):
+def plot_samples(df):
     visualizer = IntegratedGradientVisualizer()
 
-    for _, row in true_positives_df.iterrows():
+    for _, row in df.iterrows():
         ds = xr.open_dataset(row['Path'])
         print(row['Path'], row['Pred Prob'], row['Predicted'])
         print('First Observed: ', row['First Observed'])
         print(f'Location: {row["Latitude"]} lat - {row["Longitude"]} lon')
-        other_tc_locs = literal_eval(row["Other TC Locations"])
-        print(f'Other TC Locations: {other_tc_locs}')
+        # other_tc_locs = literal_eval(row["Other TC Locations"])
+        # print(f'Other TC Locations: {other_tc_locs}')
 
         # Load data, predict and calculate integrated gradient.
         X = tcdata.extract_variables_from_dataset(ds, subset)
@@ -237,8 +222,8 @@ def plot_samples(true_positives_df):
 
         # Plot rectangles to highlight locations of cyclogenesis and other TCs.
         plot_rectangle((row["Longitude"], row["Latitude"]), ax=ax, color='blue')
-        for other_loc in other_tc_locs:
-            plot_rectangle(other_loc[::-1], ax=ax, color='orange')
+        # for other_loc in other_tc_locs:
+        #     plot_rectangle(other_loc[::-1], ax=ax, color='orange')
 
         # Display the resulting plot.
         fig.tight_layout()
@@ -250,16 +235,16 @@ def plot_samples(true_positives_df):
 # ## True Positives
 # -
 
-plot_samples(true_postivies.head(10))
+plot_samples(true_postivies.sample(10))
 
-plot_samples(true_postivies.tail(10))
+plot_samples(true_postivies.sample(10))
 
 # ## False Positives
 
 false_positives = difference[difference['TC'] == 0]
-plot_samples(false_positives.head(10))
+plot_samples(false_positives.sample(10))
 
 # ## False Negatives
 
 false_negatives = difference[difference['TC']]
-plot_samples(false_negatives.head(10))
+plot_samples(false_negatives.sample(10))
