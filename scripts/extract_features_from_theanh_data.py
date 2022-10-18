@@ -78,7 +78,8 @@ def calculate_vorticity(ds: Dataset):
 
     f = ds.createVariable('F', 'f4', ('Time', 'south_north', 'west_east'))
     omega = 2 * np.pi / 86400
-    f[:, :, :] = 2 * omega * np.sin(ds['XLAT'][:, :])
+    f[:, :, :] = 2 * omega * np.sin(ds['XLAT'][:, :] * np.pi / 180)
+    # f[:, :, :] = 1
 
     return wrf.getvar(ds, 'avo')
 
