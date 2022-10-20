@@ -21,12 +21,14 @@ and vertical pressure levels are 19 mandatory levels
 """
 
 import argparse
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 import logging
 from netCDF4 import Dataset, num2date
 import numpy as np
 import numpy.typing as npt
+from multiprocessing import Pool
 import os
+from tqdm import tqdm
 import wrf
 import xarray as xr
 
@@ -40,14 +42,15 @@ def parse_arguments(args=None):
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        'inputfile',
-        action='store',
-        help='Path to the input file.',
-    )
-    parser.add_argument(
         'outputdir',
         action='store',
         help='Path to the output director.',
+    )
+    parser.add_argument(
+        'inputfiles',
+        nargs='+',
+        action='store',
+        help='Path to the input file.',
     )
     parser.add_argument(
         '--prefix', '-p',
@@ -79,7 +82,6 @@ def calculate_vorticity(ds: Dataset):
     f = ds.createVariable('F', 'f4', ('Time', 'south_north', 'west_east'))
     omega = 2 * np.pi / 86400
     f[:, :, :] = 2 * omega * np.sin(ds['XLAT'][:, :] * np.pi / 180)
-    # f[:, :, :] = 1
 
     return wrf.getvar(ds, 'avo')
 
@@ -169,31 +171,30 @@ def construct_xr_dataset(vars: 'dict[str, xr.DataArray]', lat: npt.ArrayLike, lo
     )
 
 
-def downscale(ds: xr.Dataset):
-    pass
+ExtractVariablesFnArgs = namedtuple(
+    'ExtractVariablesFnArgs', ['path', 'outdir', 'prefix'])
 
 
-if __name__ == '__main__':
-    args = parse_arguments()
+def extract_variables(args: ExtractVariablesFnArgs):
+    path = args.path
+    outdir = args.outdir
+    prefix = args.prefix
 
-    assert os.path.isfile(args.inputfile), f'Input file {args.inputfile} not found.'
-
-    # Load dataset
-    # ads = xr.load_dataset('data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/fnl_20080505_00_00.nc', engine='netcdf4')
-    # print(ads)
+    assert os.path.isfile(path), f'Input file {path} not found.'
 
     # Load input file.
-    ds = Dataset(args.inputfile, 'a', diskless=True, persist=False)
+    ds = Dataset(path, 'a', diskless=True, persist=False)
+
     ds = convert_longitudes_to_0_360(ds)
     time = ds.variables['XTIME']
     time = num2date(time[:], time.units)
     assert len(time) == 1, 'Only works with data at a time.'
-    print(time[0].strftime(TIME_FORMAT))
+    # print(time[0].strftime(TIME_FORMAT))
 
     pressures = calculate_pressure(ds)
     variables = [
         ['absvprs', calculate_vorticity, True],
-        ['capesfc', calculate_cape, False],
+        # ['capesfc', calculate_cape, False],
         ['hgtprs', calculate_geopotential, True],
         ['rhprs', calculate_relative_humidity, True],
         ['tmpprs', calculate_temperature, True],
@@ -225,10 +226,30 @@ if __name__ == '__main__':
     # Then, extract data from the desired region.
     ds = extract_in_domain(ds, (5.0, 45.0), (100.0, 260.0))
 
-    # Finally, save the dataset to the destination directory.
-    os.makedirs(args.outputdir, exist_ok=True)
     ds.to_netcdf(
-        os.path.join(args.outputdir, f'{args.prefix}_{time[0].strftime(TIME_FORMAT)}.nc'),
+        os.path.join(outdir, f'{prefix}_{time[0].strftime(TIME_FORMAT)}.nc'),
         mode='w',
         format='NETCDF4',
     )
+
+
+def main(args=None):
+    args = parse_arguments()
+
+    # Create directory to store output datasets.
+    os.makedirs(args.outputdir, exist_ok=True)
+
+    inputfiles = args.inputfiles
+
+    with Pool() as pool:
+        tasks = pool.imap_unordered(
+            extract_variables,
+            [ExtractVariablesFnArgs(f, args.outputdir, args.prefix) for f in inputfiles])
+
+        # Execute the tasks.
+        for _ in tqdm(tasks, total=len(inputfiles)):
+            pass
+
+
+if __name__ == '__main__':
+    main()
