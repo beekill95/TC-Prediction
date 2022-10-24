@@ -14,6 +14,7 @@ from datetime import datetime
 from functools import reduce
 import glob
 from multiprocessing import Pool
+import numpy as np
 import os
 import pandas as pd
 import tc_binary_classification_helpers as helpers
@@ -32,14 +33,18 @@ def parse_arguments(args=None):
         help='Path to output directory.')
     parser.add_argument(
         '--lat',
+        metavar=('latmin', 'latmax'),
+        type=float,
         required=True,
         nargs=2,
-        help='Range of latitudes of the to be extracted domain. (min lat, max lat)')
+        help='Range of latitudes of the to be extracted domain.')
     parser.add_argument(
         '--lon',
+        metavar=('lonmin', 'lonmax'),
         required=True,
+        type=float,
         nargs=2,
-        help='Range of longitudes of the to be extracted domain. (min lon, max lon)')
+        help='Range of longitudes of the to be extracted domain.')
 
     return parser.parse_args(args)
 
@@ -121,7 +126,12 @@ ExtractDomainArgs = namedtuple(
 def extract_domain(args: ExtractDomainArgs):
     file = args.file
 
-    ds = load_dataset(file['Path'])
+    try:
+        ds = load_dataset(file['Path'])
+    except Exception:
+        print(f'Cannot extract domain from file: {file["Path"]}.\n')
+        return
+
     domain_position = helpers.PatchPosition(
         lat_min = args.latmin,
         lat_max = args.latmax,
@@ -129,9 +139,17 @@ def extract_domain(args: ExtractDomainArgs):
         lon_max = args.lonmax,
     )
     domain_ds = helpers.extract_patch(domain_position, ds)
+
+    # Make sure that the output is in:
+    # * Increasing order in latitude and longitude.
+    # * Decreasing order in levation.
+    domain_ds = domain_ds.reindex(
+        lat=sorted(domain_ds['lat']),
+        lon=sorted(domain_ds['lon']),
+        lev=sorted(domain_ds['lev'], reverse=True))
+
     datepart = datetime.strftime(file['Date'], '%Y%m%d_%H_%M')
     filename = f'fnl_{datepart}.nc'
-
     domain_ds.to_netcdf(
         os.path.join(args.outputdir, filename),
         mode='w', format='NETCDF4')

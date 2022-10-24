@@ -5,8 +5,10 @@ This script will create binary classification dataset for tropical cyclogenesis.
 The reanalysis data for this only the NCEP/FNL dataset.
 """
 
-from tc_binary_classification_helpers import *
-
+try:
+    from .tc_binary_classification_helpers import *
+except ImportError:
+    from tc_binary_classification_helpers import *
 
 import argparse
 from functools import reduce
@@ -131,8 +133,12 @@ def main(args=None):
     files = list_reanalysis_files(args.ncep_fnl)
     best_track = load_best_track(args.best_track)
 
+    print(f'{len(best_track)}')
+    print(best_track['BASIN'].unique())
+
     # Filter out basins.
     best_track = best_track[best_track['BASIN'] == args.basin]
+    print(f'{len(best_track)}')
     
     # Combine best track with data that we have.
     # In this step, all negative samples (observations without TC) are removed.
@@ -151,7 +157,7 @@ def main(args=None):
     with Pool() as pool:
         tasks = pool.imap_unordered(
             NCEP_FNL_PositiveNegativePatchesExtractor(),
-            (ExtractPosNegFnArgs(row, args.domain_size, args.distance, args.output)
+            (ExtractPosNegFnArgs(row, args.domain_size, [args.distance], args.output)
              for _, row in best_track.iterrows()))
 
         # Loop through tasks so they get executed.

@@ -28,7 +28,7 @@ PatchPosition = namedtuple(
 class ExtractPosNegFnArgs():
     row: pd.Series
     domain_size: float
-    distance: float
+    distances: list[float]
     output_dir: str
 
     @property
@@ -48,9 +48,11 @@ def parse_date_from_nc_filename(filename: str):
 
 
 def load_best_track(path: str) -> pd.DataFrame:
-    df = pd.read_csv(path, skiprows=(1,))
+    df = pd.read_csv(path, skiprows=(1,), na_filter=False)
     # Parse data column.
     df['Date'] = pd.to_datetime(df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
+    print(df['BASIN'].unique())
+    print(df[df['SID'] == '2021306N10279'].head())
 
     # Group by SID, and only retain the first row.
     df = df.groupby('SID', sort=False).first()
@@ -134,7 +136,7 @@ def is_position_on_ocean(pos: Position) -> bool:
     return ocean.contains(sgeom.Point(lon, pos.lat))
 
 
-def suggest_negative_patch_center(pos_center: Position, distance: float, ds: xr.Dataset) -> Position:
+def suggest_negative_patch_center(pos_center: Position, distances: list[float], ds: xr.Dataset) -> Position:
     """
     Suggest suitable negative patch's center that is |distance| away from the positive center.
     It will search in 8 directions in counter-clockwise:
@@ -143,13 +145,23 @@ def suggest_negative_patch_center(pos_center: Position, distance: float, ds: xr.
         The center is in the given domain.
     """
     directions = range(0, 360, 45)
-    for angle in directions:
-        rad = angle * np.pi / 180
-        lat = pos_center.lat + distance * np.sin(rad)
-        lon = (pos_center.lon + distance * np.cos(rad)) % 360
-        center = Position(lat, lon)
-        if is_position_in_dataset(center, ds) and is_position_on_ocean(center):
-            return center
+    distances = [*distances]
+    distances.sort(reverse=True)
+
+    for distance in distances:
+        for angle in directions:
+            rad = angle * np.pi / 180
+            lat = pos_center.lat + distance * np.sin(rad)
+            lon = (pos_center.lon + distance * np.cos(rad)) % 360
+            center = Position(lat, lon)
+            if is_position_in_dataset(center, ds) and is_position_on_ocean(center):
+                return center
+
+        # DEBUG
+        # print(f'lat {ds["lat"].values.min()} - {ds["lat"].values.max()}')
+        # print(f'lon {ds["lon"].values.min()} - {ds["lon"].values.max()}')
+        # print(f'{pos_center=}')
+        # print(f'{center=}, {is_position_in_dataset(center, ds)=}, {is_position_on_ocean(center)=}')
 
     raise ValueError('Cannot suggest negative center. Please check your code again!!!')
 
@@ -165,6 +177,9 @@ def pos_output_dir(output_dir: str):
 class PositiveAndNegativePatchesExtractor(abc.ABC):
     max_retries = 3
     seconds_between_retries = 1
+
+    def __init__(self, raise_cannot_find_negative_patch: bool = True) -> None:
+        self.raise_cannot_find_negative_patch = raise_cannot_find_negative_patch
 
     @abc.abstractmethod
     def load_dataset(self, path: str) -> xr.Dataset:
@@ -209,7 +224,7 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
         # Unpack arguments
         row = args.row
         domain_size = args.domain_size
-        distance = args.distance
+        distances = args.distances
 
         ds = self.load_dataset_with_retries(row['Path'])
 
@@ -226,12 +241,20 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
         # Extract positive patch.
         pos_patch_pos = suggest_patch_position(pos_center, ds, domain_size)
         pos_patch = extract_patch(pos_patch_pos, ds)
+        save_patch(pos_patch, pos_center, True)
 
         # Extract suitable negative patch.
-        neg_center = suggest_negative_patch_center(pos_center, distance, ds)
+        try:
+            neg_center = suggest_negative_patch_center(pos_center, distances, ds)
+        except ValueError as e:
+            if self.raise_cannot_find_negative_patch:
+                raise e
+            else:
+                print(f'Ignore generating negative patch for file {row["Path"]}.')
+                return
+
         neg_patch_pos = suggest_patch_position(neg_center, ds, domain_size)
         neg_patch = extract_patch(neg_patch_pos, ds)
 
         # Save both patches.
-        save_patch(pos_patch, pos_center, True)
         save_patch(neg_patch, neg_center, False)

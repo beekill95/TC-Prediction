@@ -6,8 +6,10 @@ This script will create binary classification dataset for tropical cyclogenesis.
 
 from __future__ import annotations
 
-from .tc_binary_classification_helpers import *
-
+try:
+    from .tc_binary_classification_helpers import *
+except ImportError:
+    from tc_binary_classification_helpers import *
 
 import argparse
 import glob
@@ -38,7 +40,8 @@ def parse_args(args=None):
         type=float,
         help='Size (in degrees) of the extracted domain. Default is 30deg.')
     parser.add_argument(
-        '--distance',
+        '--distances',
+        nargs='+',
         default=50, # 5000km
         type=float,
         help='Distance (in degrees) of the negative domain\'s center to positive domain\'s center. Default is 50deg.')
@@ -80,8 +83,8 @@ def main(args=None):
     # Now, loop over all files and extract the patches.
     with Pool() as pool:
         tasks = pool.imap_unordered(
-            TheAnhPositiveNegativePatchesExtract(),
-            (ExtractPosNegFnArgs(row, args.domain_size, args.distance, args.output)
+            TheAnhPositiveNegativePatchesExtract(raise_cannot_find_negative_patch=False),
+            (ExtractPosNegFnArgs(row, args.domain_size, args.distances, args.output)
              for _, row in best_track.iterrows()))
 
         # Loop through tasks so they get executed.
