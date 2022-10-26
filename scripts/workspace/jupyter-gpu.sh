@@ -2,6 +2,7 @@
 
 # Activate conda environment with tensorflow-gpu
 conda activate tc_updated_2
+# conda activate iub
 module load deeplearning
 
 # Then, forward port back to h2

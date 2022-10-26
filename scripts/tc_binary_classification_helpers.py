@@ -203,6 +203,12 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
 
     def __call__(self, args: ExtractPosNegFnArgs) -> None:
         def save_patch(patch: xr.Dataset, center: Position, is_positive: bool):
+            # Make sure that the patch is in correct order.
+            patch = patch.reindex(
+                lat=sorted(patch['lat']),
+                lon=sorted(patch['lon']),
+                lev=sorted(patch['lev'], reverse=True))
+
             fn_parts = [
                 # Date.
                 datetime.strftime(row['Date'], '%Y%m%d_%H_%M'),

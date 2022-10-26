@@ -77,7 +77,9 @@ class NCEP_FNL_PositiveNegativePatchesExtractor(PositiveAndNegativePatchesExtrac
                 for v in variables]
 
             ds = reduce(lambda acc, cur: acc.merge(cur), datasets[1:], datasets[0])
-            return ds.sel(isobaricInhPa=slice(200, 1e3))
+            assert len(ds['isobaricInhPa'].values) > 0, f'Empty pressure levels for {path}'
+            ds = ds.where((ds['isobaricInhPa'] >= 200) & (ds['isobaricInhPa'] <= 1e3), drop=True)
+            return ds
 
         common_ds = load_common_ds()
 
