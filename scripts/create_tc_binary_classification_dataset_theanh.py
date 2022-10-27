@@ -27,7 +27,7 @@ def parse_args(args=None):
         '--best-track',
         dest='best_track',
         required=True,
-        help='Path to ibtracs best track.')
+        help='Path to ibtracs best track, or pattern to The Anh best track.')
     parser.add_argument(
         '--theanh-baseline',
         dest='theanh_baseline',
@@ -70,7 +70,11 @@ class TheAnhPositiveNegativePatchesExtract(PositiveAndNegativePatchesExtractor):
 def main(args=None):
     args = parse_args(args)
     files = list_reanalysis_files(args.theanh_baseline)
-    best_track = load_best_track(args.best_track)
+
+    best_track_loader = (load_best_track
+            if os.path.isfile(args.best_track)
+            else load_best_track_files_theanh)
+    best_track = best_track_loader(args.best_track)
 
     # Combine best track with data that we have.
     # In this step, all negative samples (observations without TC) are removed.

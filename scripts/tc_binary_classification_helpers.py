@@ -8,8 +8,9 @@ import abc
 import cartopy.io.shapereader as shpreader
 from collections import namedtuple
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import fiona
+import glob
 import numpy as np
 import os
 import pandas as pd
@@ -51,8 +52,6 @@ def load_best_track(path: str) -> pd.DataFrame:
     df = pd.read_csv(path, skiprows=(1,), na_filter=False)
     # Parse data column.
     df['Date'] = pd.to_datetime(df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
-    print(df['BASIN'].unique())
-    print(df[df['SID'] == '2021306N10279'].head())
 
     # Group by SID, and only retain the first row.
     df = df.groupby('SID', sort=False).first()
@@ -60,6 +59,44 @@ def load_best_track(path: str) -> pd.DataFrame:
     df['SID'] = df.index
 
     return df
+
+
+def load_best_track_files_theanh(files_pattern: str) -> pd.DataFrame:
+    def convert_to_date(days_since_new_year, year):
+        delta = timedelta(days_since_new_year)
+        new_year = datetime(year, 1, 1, 0, 0)
+        return new_year + delta
+
+    def parse_year(file_path):
+        parent_dir = os.path.dirname(file_path).split(os.path.sep)[-1]
+        year_part = parent_dir.split('_')[-1]
+        return int(year_part)
+
+    files = glob.iglob(files_pattern)
+
+    storms = []
+    for file in files:
+        year = parse_year(file)
+        storms_in_year = pd.read_csv(
+            file,
+            names=['Days', 'StormId', 'LON', 'LAT'],
+            delim_whitespace=True,
+            usecols=list(range(4)),
+        )
+        storms_in_year['SID'] = storms_in_year['StormId'].apply(
+            lambda id: f'{year}-{id}')
+        genesis_in_year = storms_in_year.groupby('StormId').first()
+
+        # Convert 'Days' in year to date.
+        genesis_in_year['Date'] = genesis_in_year['Days'].apply(
+            lambda days: convert_to_date(days, year))
+
+
+        storms.append(
+            genesis_in_year[['SID', 'Date', 'LAT', 'LON']])
+
+    storms = pd.concat(storms).sort_values('Date')
+    return storms
 
 
 def suggest_patch_position(center: Position, ds: xr.Dataset, domain_size: float) -> PatchPosition:

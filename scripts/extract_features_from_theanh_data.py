@@ -19,6 +19,8 @@ and 100 degree West to 260 degree East,
 and vertical pressure levels are 19 mandatory levels
 (1000, 975, 950, 925, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350, 300, 250, 200).
 """
+from __future__ import annotations
+
 
 import argparse
 from collections import OrderedDict, namedtuple
@@ -29,6 +31,7 @@ import numpy.typing as npt
 from multiprocessing import Pool
 import os
 from tqdm import tqdm
+from typing import Callable
 import wrf
 import xarray as xr
 
@@ -175,6 +178,17 @@ ExtractVariablesFnArgs = namedtuple(
     'ExtractVariablesFnArgs', ['path', 'outdir', 'prefix'])
 
 
+def catch_extract_variables_exception(func: Callable[[ExtractVariablesFnArgs], None]):
+    def wrapped_func(args: ExtractVariablesFnArgs):
+        try:
+            func(args)
+        except Exception as e:
+            logging.warning(f'=== IGNORE: {args.path} due to error:\n{e}')
+
+    return wrapped_func
+
+
+@catch_extract_variables_exception
 def extract_variables(args: ExtractVariablesFnArgs):
     path = args.path
     outdir = args.outdir
@@ -189,7 +203,6 @@ def extract_variables(args: ExtractVariablesFnArgs):
     time = ds.variables['XTIME']
     time = num2date(time[:], time.units)
     assert len(time) == 1, 'Only works with data at a time.'
-    # print(time[0].strftime(TIME_FORMAT))
 
     pressures = calculate_pressure(ds)
     variables = [
