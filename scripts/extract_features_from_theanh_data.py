@@ -178,17 +178,13 @@ ExtractVariablesFnArgs = namedtuple(
     'ExtractVariablesFnArgs', ['path', 'outdir', 'prefix'])
 
 
-def catch_extract_variables_exception(func: Callable[[ExtractVariablesFnArgs], None]):
-    def wrapped_func(args: ExtractVariablesFnArgs):
-        try:
-            func(args)
-        except Exception as e:
-            logging.warning(f'=== IGNORE: {args.path} due to error:\n{e}')
-
-    return wrapped_func
+def extract_variables_with_exception_handled(args: ExtractVariablesFnArgs):
+    try:
+        extract_variables(args)
+    except Exception as e:
+        logging.warning(f'=== IGNORE: {args.path} due to error:\n{e}')
 
 
-@catch_extract_variables_exception
 def extract_variables(args: ExtractVariablesFnArgs):
     path = args.path
     outdir = args.outdir
@@ -256,7 +252,7 @@ def main(args=None):
 
     with Pool() as pool:
         tasks = pool.imap_unordered(
-            extract_variables,
+            extract_variables_with_exception_handled,
             [ExtractVariablesFnArgs(f, args.outputdir, args.prefix) for f in inputfiles])
 
         # Execute the tasks.
