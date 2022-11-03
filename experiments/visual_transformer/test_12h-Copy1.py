@@ -40,30 +40,29 @@ data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_1
 train_path = data_path.replace('.csv.updated', '_train.csv.updated')
 val_path = data_path.replace('.csv.updated', '_val.csv.updated')
 test_path = data_path.replace('.csv.updated', '_test.csv.updated')
-subset = dict(
-    absvprs=[900, 750],
-    rhprs=[750],
-    tmpprs=[900, 500],
-    hgtprs=[500],
-    vvelprs=[500],
-    ugrdprs=[800, 200],
-    vgrdprs=[800, 200],
-)
-data_shape = (41, 161, 13)
-patch_size = 16
 # subset = dict(
-#     hgtprs=[700, 500, 250],
-#     ugrdprs=[700, 500, 250],
-#     vgrdprs=[700, 500, 250],
-#     capesfc=None,
-#     absvprs=None,
-#     rhprs=None,
-#     tmpprs=None,
-#     vvelprs=None,
-#     tmpsfc=None,
-#     slp=None,
+#     absvprs=[900, 750],
+#     rhprs=[750],
+#     tmpprs=[900, 500],
+#     hgtprs=[500],
+#     vvelprs=[500],
+#     ugrdprs=[800, 200],
+#     vgrdprs=[800, 200],
 # )
-# data_shape = (41, 161, 9)
+# data_shape = (41, 161, 13)
+# patch_size = 16
+subset = dict(
+    hgtprs=[700, 500, 250],
+    ugrdprs=[700, 500, 250],
+    vgrdprs=[700, 500, 250],
+    capesfc=None,
+    absvprs=None,
+    rhprs=[700, 500, 250],
+    tmpprs=[700, 500, 250],
+    vvelprs=None,
+    tmpsfc=None,
+)
+data_shape = (41, 161, 15)
 leadtime = 12
 
 # + tags=[]
@@ -122,34 +121,29 @@ def neg_focal_loss(from_logits: bool = True):
     return loss
 
 
-def exp_focal_loss(from_logits: bool = True):
-    def part_loss(x):
-        return -tf.exp(1 - x) * tf.math.log(x)
-    
-    def loss(y_true, y_pred):
-        if from_logits:
-            y_pred = tf.sigmoid(y_pred)
-
-        return 20. * y_true * part_loss(y_pred) + (1 - y_true) * part_loss(1 - y_pred)
-    
-    return loss
-
-
 # tf.keras.backend.clear_session()
 model = keras.Sequential([
     layers.Input(data_shape),
     preprocessing,
-    # layers.Conv2D(256, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    layers.Conv2D(68, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    # layers.Conv2D(16, 1, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    # layers.Conv2D(32, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(64, 3, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.Conv2D(32, 1, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.Conv2D(64, 3, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.LayerNormalization(),
+    # layers.Activation('relu'),
     layers.MaxPooling2D(pool_size=(2, 2), strides=2),
-    # layers.Conv2D(512, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    layers.Conv2D(128, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(128, 3, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.Conv2D(64, 1, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.Conv2D(128, 3, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    # layers.BatchNormalization(epsilon=1.001e-5),
+    # layers.Activation('relu'),
+    # layers.MaxPooling2D(pool_size=(2, 2), strides=2),
+    # layers.Conv2D(128, 3, kernel_regularizer=keras.regularizers.L2(1e-4)),
+    # layers.BatchNormalization(epsilon=1.001e-5),
+    # layers.Activation('relu'),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
     layers.Dropout(0.5),
-    layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Dense(1),
 ])
 model.build()
 model.summary()
@@ -157,8 +151,6 @@ model.summary()
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
     loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    # loss=exp_focal_loss(),
-    # loss=tf.keras.losses.Hinge(),
     # loss=tfa.losses.SigmoidFocalCrossEntropy(
     #     alpha=1. - 1./20,
     #     gamma=0.1,
@@ -181,8 +173,7 @@ model.compile(
 # + tags=[]
 print(f'Tesorboard at: "outputs/{exp_name}_{runtime}_1st_board"')
 
-
-epochs = 1000
+epochs = 500
 first_stage_history = model.fit(
     full_training,
     epochs=epochs,
@@ -195,7 +186,7 @@ first_stage_history = model.fit(
             # monitor='val_loss',
             mode='max',
             verbose=1,
-            patience=100,
+            patience=50,
             restore_best_weights=True),
         # keras.callbacks.ModelCheckpoint(
         #     filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",

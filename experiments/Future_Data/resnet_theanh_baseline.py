@@ -35,8 +35,8 @@ exp_name = 'baseline_resnet_theanh_baseline'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
 data_path = 'data/theanh_WPAC_baseline/tc_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
-val_path = data_path.replace('.csv', '_val.csv')
-test_path = data_path.replace('.csv', '_test.csv')
+val_path = data_path.replace('.csv', '_test.csv')
+# test_path = data_path.replace('.csv', '_test.csv')
 subset = dict(
     absvprs=[900, 750],
     rhprs=[750],
@@ -148,42 +148,42 @@ first_stage_history = model.fit(
 )
 
 plot.plot_training_history(first_stage_history, "First stage training")
-# -
 
-testing = data.load_data_v1(
-    test_path,
-    data_shape=data_shape,
-    subset=subset,
-    group_same_observations=True,
-)
-testing = testing.map(remove_nans).map(normalize_data)
-model.evaluate(
-    testing,
-    callbacks=[
-        keras.callbacks.TensorBoard(
-            log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
-        ),
-    ])
+# +
+# testing = data.load_data_v1(
+#     test_path,
+#     data_shape=data_shape,
+#     subset=subset,
+#     group_same_observations=True,
+# )
+# testing = testing.map(remove_nans).map(normalize_data)
+# model.evaluate(
+#     testing,
+#     callbacks=[
+#         keras.callbacks.TensorBoard(
+#             log_dir=f'outputs/{exp_name}_{runtime}_1st_board',
+#         ),
+#     ])
 
 
 # +
-from scipy.special import expit # noqa
-import numpy as np # noqa
-import pandas as pd # noqa
+# from scipy.special import expit # noqa
+# import numpy as np # noqa
+# import pandas as pd # noqa
 
-predictions = model.predict(testing)
-predictions = expit(predictions)
-predictions = np.where(predictions > .5, 1, 0)
+# predictions = model.predict(testing)
+# predictions = expit(predictions)
+# predictions = np.where(predictions > .5, 1, 0)
 
 # +
-testing_df: pd.DataFrame = pd.read_csv(test_path)
-testing_df['Date'] = pd.to_datetime(testing_df['Date'], format='%Y-%m-%d %H:%M:%S')
-testing_df['Year'] = testing_df['Date'].apply(lambda d: d.year)
-testing_df['Prediction'] = predictions
+# testing_df: pd.DataFrame = pd.read_csv(test_path)
+# testing_df['Date'] = pd.to_datetime(testing_df['Date'], format='%Y-%m-%d %H:%M:%S')
+# testing_df['Year'] = testing_df['Date'].apply(lambda d: d.year)
+# testing_df['Prediction'] = predictions
 
-yearly = testing_df[['Year', 'Prediction']].groupby('Year').sum()
-for _, row in yearly.iterrows():
-    print(row)
+# yearly = testing_df[['Year', 'Prediction']].groupby('Year').sum()
+# for _, row in yearly.iterrows():
+#     print(row)
 #     print(row['Name'], row['Prediction'])
 
 

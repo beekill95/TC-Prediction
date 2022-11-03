@@ -69,16 +69,50 @@ inputs = layers.Input(data_shape)
 preprocessing = keras.Sequential([
     layers.Normalization(axis=-1),
 ], name='preprocessing')
-print(len(preprocessing.layers), preprocessing.layers[0])
 preprocessing.layers[0].adapt(X_train)
 
-model = resnet.ResNet18(input_tensor=preprocessing(inputs), classes=5)
+model = keras.Sequential([
+    layers.Input(data_shape),
+    preprocessing,
+    # layers.Conv2D(256, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(64, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.MaxPooling2D(pool_size=(2, 2), strides=2),
+    # layers.Conv2D(512, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(128, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.GlobalAveragePooling2D(),
+    layers.Flatten(),
+    layers.Dropout(0.5),
+    layers.Dense(64, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(5, kernel_regularizer=keras.regularizers.L2(1e-4)),
+])
+model.build()
 model.summary()
 
+
+# +
+def weighted_sigmoid_cross_entropy_loss(from_logits: bool = False):
+    binary_loss = tf.keras.losses.BinaryCrossentropy(from_logits=from_logits)
+
+    def loss(y_true, y_pred):
+        loss = 0.
+        for i in range(y_true.shape[1]):
+            # Manually scale the sample weight.
+            sample_weight = tf.where(y_true[:, i] == 1, 40., 1.)[:, None]
+            # tf.print(y_true[:5, i])
+            loss += binary_loss(y_true[:, i], y_pred[:, i], sample_weight)
+            # tf.print(sample_weight)
+        return loss
+
+    return loss
+
+
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
     # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
+    # loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
+    # loss=tf.compat.v1.losses.sigmoid_cross_entropy,
+    loss=weighted_sigmoid_cross_entropy_loss(from_logits=True),
     # loss=tfa.losses.SigmoidFocalCrossEntropy(from_logits=True),
     metrics=[
         'binary_accuracy',
@@ -86,6 +120,7 @@ model.compile(
         tfm.PrecisionScore(from_logits=True),
         tfm.F1Score(num_classes=5, from_logits=True, threshold=0.5),
     ])
+# -
 
 # ## Training & Testing
 
@@ -95,7 +130,7 @@ first_stage_history = model.fit(
     training_ds,
     epochs=epochs,
     validation_data=validation_ds,
-    # class_weight={1: 1., 0: 1.},
+    # class_weight={1: 20., 0: 1.},
     shuffle=True,
     callbacks=[
         keras.callbacks.EarlyStopping(

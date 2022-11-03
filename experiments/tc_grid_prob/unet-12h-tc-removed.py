@@ -32,9 +32,9 @@ import xarray as xr
 # Configurations to run for this experiment.
 
 # +
-exp_name = 'tc_grid_prob_unet'
+exp_name = 'tc_grid_prob_unet_12h_tc_removed'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_6h_12h_18h_24h_30h_36h_42h_48h.csv'
+data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -210,13 +210,14 @@ import tc_formation.data.label as label # noqa
 from tc_formation.data.data import load_observation_data_with_tc_probability # noqa
 from tc_formation.plots import decorators, observations as plt_obs # noqa
 
-params = {'legend.fontsize': 'xx-large',
-         'axes.labelsize': 'xx-large',
-         'axes.titlesize':'xx-large',
-         'xtick.labelsize':'xx-large',
-         'ytick.labelsize':'xx-large',
-         'figure.titlesize': 'xx-large'}
+size = '30'
+params = {'legend.fontsize': size,
+         'axes.labelsize': size,
+         'axes.titlesize': size,
+         'xtick.labelsize': size,
+         'ytick.labelsize': size}
 plt.rcParams.update(params)
+
 
 @decorators._with_axes
 @decorators._with_basemap
@@ -283,22 +284,26 @@ def plot_groundtruth_and_prediction(tc_df):
         
         fig, axes = plt.subplots(nrows=4, figsize=(30, 36))
         plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(groundtruth), ax=axes[0])
-        axes[0].set_title(f"Groundtruth for date {row['Date']} for cyclogenesis on {row['First Observed']}")
+#         axes[0].set_title(f"Groundtruth for date {row['Date']} for cyclogenesis on {row['First Observed']}")
+        axes[0].set_title('a)', loc='left')
         plot_tc_occurence_prob(dataset=dataset, prob=np.squeeze(prediction), ax=axes[1])
-        axes[1].set_title(f"Prediction for date {row['Date']} for cyclogenesis on {row['First Observed']}")
+#         axes[1].set_title(f"Prediction for date {row['Date']} for cyclogenesis on {row['First Observed']}")
+        axes[1].set_title('b)', loc='left')
         # plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[0])
         ax = axes[2]
         plot_stuffs(dataset, pressure_level=850, ax=ax)
         draw_rectangles(dataset=dataset, rectangles=gt_boxes, ax=ax, edgecolor='lime', linewidth=4)
         draw_rectangles(dataset=dataset, rectangles=pred_boxes, ax=ax, edgecolor='coral', linewidth=4)
-        ax.set_title(f"SST, RH and Wind Field @ 850mb on date {row['Date']}")
+#         ax.set_title(f"SST, RH and Wind Field @ 850mb on date {row['Date']}")
+        ax.set_title('c)', loc='left')
 
         # plt_obs.plot_wind(dataset=dataset, pressure_level=800, skip=4, ax=ax[1])
         ax = axes[3]
         plot_stuffs(dataset, pressure_level=500, ax=ax)
         draw_rectangles(dataset=dataset, rectangles=gt_boxes, ax=ax, edgecolor='lime', linewidth=4)
         draw_rectangles(dataset=dataset, rectangles=pred_boxes, ax=ax, edgecolor='coral', linewidth=4)
-        ax.set_title(f"SST, RH and Wind Field @ 500mb on date {row['Date']}")
+#         ax.set_title(f"SST, RH and Wind Field @ 500mb on date {row['Date']}")
+        ax.set_title('d)', loc='left')
         
         if row['TC']:
             title = f"""Prediction on date {row['Date']} for tropical cyclone appearing on {row['First Observed']}"""

@@ -140,14 +140,14 @@ model = keras.Sequential([
     layers.Input(data_shape),
     preprocessing,
     # layers.Conv2D(256, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    layers.Conv2D(68, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    # layers.Conv2D(16, 1, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    # layers.Conv2D(32, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(64, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     layers.MaxPooling2D(pool_size=(2, 2), strides=2),
     # layers.Conv2D(512, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     layers.Conv2D(128, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
+    layers.Dropout(0.5),
+    layers.Dense(64, kernel_regularizer=keras.regularizers.L2(1e-4), activation='relu'),
     layers.Dropout(0.5),
     layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-4)),
 ])
@@ -181,8 +181,7 @@ model.compile(
 # + tags=[]
 print(f'Tesorboard at: "outputs/{exp_name}_{runtime}_1st_board"')
 
-
-epochs = 1000
+epochs = 500
 first_stage_history = model.fit(
     full_training,
     epochs=epochs,
@@ -195,7 +194,7 @@ first_stage_history = model.fit(
             # monitor='val_loss',
             mode='max',
             verbose=1,
-            patience=100,
+            patience=50,
             restore_best_weights=True),
         # keras.callbacks.ModelCheckpoint(
         #     filepath=f"outputs/{exp_name}_{runtime}_1st_ckp",

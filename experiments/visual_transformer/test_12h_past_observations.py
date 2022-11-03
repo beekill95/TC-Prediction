@@ -17,9 +17,7 @@
 
 from tc_formation import plot
 from tc_formation.data import data
-from tc_formation.models.vision_transformer import ViT
-from tc_formation.models.patches_layer import Patches
-from tc_formation.data.loaders.tc_occurence import TropicalCycloneOccurenceDataLoader
+from tc_formation.data.loaders.tc_occurence import TimeSeriesTropicalCycloneOccurenceDataLoader
 import tc_formation.tf_metrics as tfm
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -33,7 +31,7 @@ from datetime import datetime
 # The data that we're using will have the following shape.
 # Should change it to whatever the shape of the data we're going to use down there.
 
-exp_name = 'baseline_test_12h'
+exp_name = 'baseline_test_12h_past_observations'
 runtime = datetime.now().strftime('%Y_%m_%d_%H_%M')
 # data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h/tc_ibtracs_12h_WP_EP_v3.csv'
 data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_100_260/12h_tc_removed/tc_ibtracs_12h_WP_EP_v3.csv.updated'
@@ -50,7 +48,6 @@ subset = dict(
     vgrdprs=[800, 200],
 )
 data_shape = (41, 161, 13)
-patch_size = 16
 # subset = dict(
 #     hgtprs=[700, 500, 250],
 #     ugrdprs=[700, 500, 250],
@@ -65,6 +62,7 @@ patch_size = 16
 # )
 # data_shape = (41, 161, 9)
 leadtime = 12
+previous_hours = [6, 12]
 
 # + tags=[]
 # input_tensor = layers.Input(data_shape)
@@ -84,19 +82,17 @@ leadtime = 12
 
 # Load our training and validation data.
 
-loader = TropicalCycloneOccurenceDataLoader(data_shape=data_shape, subset=subset)
+loader = TimeSeriesTropicalCycloneOccurenceDataLoader(
+    data_shape=data_shape, subset=subset, previous_hours=previous_hours)
 full_training = loader.load_dataset(data_path=train_path, batch_size=128, shuffle=True)
 validation = loader.load_dataset(data_path=val_path)
 
 # +
-preprocessing = keras.Sequential([
-    layers.Normalization(axis=-1),
-    layers.GaussianNoise(0.5),
-], name='preprocessing')
+normalizer = layers.Normalization(axis=-1)
 
-normalizer = preprocessing.layers[0]
 for X, y in iter(full_training):
-    normalizer.adapt(X)
+    # We will need to normalize the first/or last time.
+    normalizer.adapt(X[:, 0])
 normalizer
 
 
@@ -112,40 +108,36 @@ normalizer
 # ## Model
 
 # +
-def neg_focal_loss(from_logits: bool = True):
-    def loss(y_true, y_pred):
-        if from_logits:
-            y_pred = tf.sigmoid(y_pred)
+class MoveTimeDimensionToChannelDimensionLayer(layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.concat = layers.Concatenate(axis=-1)
 
-        return -20. * y_true * tf.math.log(y_pred) / tf.sqrt(1 - y_pred) - (1 - y_true) * tf.math.log(1 - y_pred) / tf.sqrt(y_pred)
-
-    return loss
-
-
-def exp_focal_loss(from_logits: bool = True):
-    def part_loss(x):
-        return -tf.exp(1 - x) * tf.math.log(x)
-    
-    def loss(y_true, y_pred):
-        if from_logits:
-            y_pred = tf.sigmoid(y_pred)
-
-        return 20. * y_true * part_loss(y_pred) + (1 - y_true) * part_loss(1 - y_pred)
-    
-    return loss
+    def call(self, inputs):
+        time_dims = inputs.shape[1]
+        return self.concat([inputs[:, i] for i in range(time_dims)])
 
 
+preprocessing = keras.Sequential([
+    layers.TimeDistributed(normalizer),
+    # layers.GaussianNoise(0.5),
+    MoveTimeDimensionToChannelDimensionLayer(),
+], name='preprocessing')
+
+# +
 # tf.keras.backend.clear_session()
 model = keras.Sequential([
-    layers.Input(data_shape),
+    layers.Input((len(previous_hours) + 1,) + data_shape),
     preprocessing,
     # layers.Conv2D(256, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
-    layers.Conv2D(68, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.Conv2D(64, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     # layers.Conv2D(16, 1, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     # layers.Conv2D(32, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     layers.MaxPooling2D(pool_size=(2, 2), strides=2),
+    layers.LayerNormalization(),
     # layers.Conv2D(512, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
     layers.Conv2D(128, 3, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-4)),
+    layers.LayerNormalization(),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
     layers.Dropout(0.5),
@@ -170,6 +162,7 @@ model.compile(
         tfm.RecallScore(from_logits=True),
         tfm.PrecisionScore(from_logits=True),
         tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+        tfm.F1Score(num_classes=1, from_logits=True, threshold=0.9, name='f1_score_09'),
     ]
 )
 # -
@@ -213,14 +206,7 @@ first_stage_history = model.fit(
 plot.plot_training_history(first_stage_history, "First stage training")
 # -
 
-testing = data.load_data_v1(
-    test_path,
-    data_shape=data_shape,
-    subset=subset,
-    leadtime=leadtime,
-    group_same_observations=True,
-)
-# testing = testing.map(normalize_data)
+testing = loader.load_dataset(data_path=test_path)
 print(f'\n**** LEAD TIME: {leadtime}')
 model.evaluate(testing)
 

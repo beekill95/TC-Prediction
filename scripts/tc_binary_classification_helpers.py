@@ -192,7 +192,8 @@ def suggest_negative_patch_center(pos_center: Position, distances: list[float], 
             lon = (pos_center.lon + distance * np.cos(rad)) % 360
             center = Position(lat, lon)
             if is_position_in_dataset(center, ds) and is_position_on_ocean(center):
-                return center
+                # return center
+                yield center
 
         # DEBUG
         # print(f'lat {ds["lat"].values.min()} - {ds["lat"].values.max()}')
@@ -201,6 +202,23 @@ def suggest_negative_patch_center(pos_center: Position, distances: list[float], 
         # print(f'{center=}, {is_position_in_dataset(center, ds)=}, {is_position_on_ocean(center)=}')
 
     raise ValueError('Cannot suggest negative center. Please check your code again!!!')
+
+
+def does_patch_contain_TC(patch: PatchPosition, best_track: pd.DataFrame) -> bool:
+    lat_min = patch.lat_min
+    lat_max = patch.lat_max
+    lon_min = patch.lon_min
+    lon_max = patch.lon_max
+    
+    tc_lon = best_track['LON']
+    tc_lat = best_track['LAT']
+    tc_in_domain = best_track[
+        (tc_lon >= lon_min)
+        & (tc_lon <= lon_max)
+        & (tc_lat >= lat_min)
+        & (tc_lat <= lat_max)]
+
+    return len(tc_in_domain) > 0
 
 
 def neg_output_dir(output_dir: str):
@@ -215,8 +233,11 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
     max_retries = 3
     seconds_between_retries = 1
 
-    def __init__(self, raise_cannot_find_negative_patch: bool = True) -> None:
+    def __init__(self,
+            detailed_best_track: pd.DataFrame,
+            raise_cannot_find_negative_patch: bool = True) -> None:
         self.raise_cannot_find_negative_patch = raise_cannot_find_negative_patch
+        self.detailed_best_track = detailed_best_track
 
     @abc.abstractmethod
     def load_dataset(self, path: str) -> xr.Dataset:
@@ -236,7 +257,6 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
                 time.sleep(self.seconds_between_retries)
                 print(f'Retry attempt #{i} - Loading dataset from {path}')
                 i += 1
-
 
     def __call__(self, args: ExtractPosNegFnArgs) -> None:
         def save_patch(patch: xr.Dataset, center: Position, is_positive: bool):
@@ -288,16 +308,15 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
 
         # Extract suitable negative patch.
         try:
-            neg_center = suggest_negative_patch_center(pos_center, distances, ds)
+            for neg_center in suggest_negative_patch_center(pos_center, distances, ds):
+                neg_patch_pos = suggest_patch_position(neg_center, ds, domain_size)
+                if not does_patch_contain_TC(neg_patch_pos, self.detailed_best_track):
+                    neg_patch = extract_patch(neg_patch_pos, ds)
+                    save_patch(neg_patch, neg_center, False)
+                    break
+
         except ValueError as e:
             if self.raise_cannot_find_negative_patch:
                 raise e
             else:
                 print(f'Ignore generating negative patch for file {row["Path"]}.')
-                return
-
-        neg_patch_pos = suggest_patch_position(neg_center, ds, domain_size)
-        neg_patch = extract_patch(neg_patch_pos, ds)
-
-        # Save both patches.
-        save_patch(neg_patch, neg_center, False)
