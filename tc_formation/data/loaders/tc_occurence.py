@@ -14,9 +14,6 @@ import xarray as xr
 
 
 class TimeSeriesTropicalCycloneOccurenceDataLoader(TimeSeriesTropicalCycloneDataLoader):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def _process_to_dataset(self, tc_df: pd.DataFrame) -> tf.data.Dataset:
         cls = TimeSeriesTropicalCycloneOccurenceDataLoader
 

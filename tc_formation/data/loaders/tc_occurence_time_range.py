@@ -1,6 +1,5 @@
 from .. import tfd_utils as tfd_utils
 from .. import utils as data_utils
-from ..time_series_addons import SingleTimeStepMixin
 from .time_range import TimeSeriesTimeRangeDataLoader
 
 import numpy as np
@@ -14,10 +13,12 @@ class TimeSeriesTropicalCycloneOccurenceTimeRangeDataLoader(TimeSeriesTimeRangeD
     def _process_to_dataset(self, label_df: pd.DataFrame) -> tf.data.Dataset:
         time_ranges = len(label_df['Genesis'].iloc[0])
 
+        print(label_df['Path'].values[0])
+        print(np.asarray(label_df['Genesis'].tolist())[:5, :5])
 
         dataset = tf.data.Dataset.from_tensor_slices({
-            'Path': np.asarray(label_df['Path']),
-            'Genesis': np.asarray(label_df['Genesis']),
+            'Path': np.asarray(label_df['Path'].tolist()),
+            'Genesis': np.asarray(label_df['Genesis'].tolist()),
         })
 
         dataset = dataset.map(
@@ -50,8 +51,23 @@ class TimeSeriesTropicalCycloneOccurenceTimeRangeDataLoader(TimeSeriesTimeRangeD
         return super().load_single_data(row)
 
 
-class TropicalCycloneOccurenceTimeRangeDataLoader(SingleTimeStepMixin, TimeSeriesTropicalCycloneOccurenceTimeRangeDataLoader):
-    pass
+class TropicalCycloneOccurenceTimeRangeDataLoader(TimeSeriesTropicalCycloneOccurenceTimeRangeDataLoader):
+    def __init__(self, data_shape: tuple[int, int, int], subset: dict) -> None:
+        super().__init__(data_shape, previous_hours=[], subset=subset)
+
+    def load_dataset(
+            self,
+            path: str,
+            batch_size: int = 128,
+            shuffle: bool = False,
+            caching: bool = True) -> tf.data.Dataset:
+        ds = super().load_dataset(path, batch_size, shuffle, caching)
+        ds = ds.map(_remove_time_dim)
+        return ds
+
+
+def _remove_time_dim(X, y):
+    return tf.squeeze(X, axis=1), y
 
 
 def _load_observations(paths: list[str], genesis: npt.NDArray, subset: dict = None) -> tuple[npt.NDArray, npt.NDArray]:

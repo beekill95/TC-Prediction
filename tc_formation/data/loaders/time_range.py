@@ -50,8 +50,10 @@ class TimeSeriesTimeRangeDataLoader(abc.ABC):
             caching: bool = True) -> tf.data.Dataset:
 
         label_df = load_time_range_label(path)
+        print(label_df.columns)
         label_df['Path'] = label_df.apply(
-                lambda row: self._add_previous_hours_paths(row['Date'], row['Path']))
+                lambda row: self._add_previous_hours_paths(row['Date'], row['Path']),
+                axis=1)
         label_df = label_df[label_df['Path'].apply(_are_all_paths_valid)]
         dataset = self._process_to_dataset(label_df)
 

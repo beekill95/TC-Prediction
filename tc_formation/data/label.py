@@ -53,7 +53,7 @@ def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None
     return tc[mask]
 
 
-def load_label(label_path, group_observation_by_date=True, leadtime=None):
+def load_label(label_path, group_observation_by_date=True, leadtime=None) -> pd.DataFrame:
     label = pd.read_csv(label_path, dtype={
         'TC Id': str,
         'First Observed': str,
