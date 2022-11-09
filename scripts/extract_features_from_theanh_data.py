@@ -31,7 +31,6 @@ import numpy.typing as npt
 from multiprocessing import Pool
 import os
 from tqdm import tqdm
-from typing import Callable
 import wrf
 import xarray as xr
 
@@ -138,6 +137,14 @@ def calculate_cape(ds: Dataset):
     return wrf.getvar(ds, 'cape2d')
 
 
+def calculate_sst(ds: Dataset):
+    return wrf.getvar(ds, 'SST')
+
+
+def calculate_land_mask(ds: Dataset):
+    return wrf.getvar(ds, 'LANDMASK')
+
+
 def extract_at_levels(var: xr.DataArray, pressures: xr.DataArray, levels: 'list[int]'):
     return wrf.interplevel(var, pressures, levels)
 
@@ -207,11 +214,12 @@ def extract_variables(args: ExtractVariablesFnArgs):
         ['hgtprs', calculate_geopotential, True],
         ['rhprs', calculate_relative_humidity, True],
         ['tmpprs', calculate_temperature, True],
-        # tmpsfc is missing.
+        ['tmpsfc', calculate_sst, False],
         ['ugrdprs', calculate_uwind, True],
         ['vgrdprs', calculate_vwind, True],
         ['vvelprs', calculate_wwind, True],
-        ['slp', calculate_slp, False],
+        ['pressfc', calculate_slp, False],
+        ['landmask', calculate_land_mask, False],
     ]
 
     # Extract each variable.

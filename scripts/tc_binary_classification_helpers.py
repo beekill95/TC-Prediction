@@ -48,20 +48,23 @@ def parse_date_from_nc_filename(filename: str):
     return datetime.strptime(datepart, FMT)
 
 
-def load_best_track(path: str) -> pd.DataFrame:
+def load_best_track(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df = pd.read_csv(path, skiprows=(1,), na_filter=False)
     # Parse data column.
     df['Date'] = pd.to_datetime(df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
 
+    # We only care about some columns.
+    df = df[['SID', 'Date', 'LAT', 'LON']]
+
     # Group by SID, and only retain the first row.
-    df = df.groupby('SID', sort=False).first()
-    df = df.copy()
-    df['SID'] = df.index
+    genesis_df = df.groupby('SID', sort=False).first()
+    genesis_df = genesis_df.copy()
+    genesis_df['SID'] = genesis_df.index
 
-    return df
+    return genesis_df, df
 
 
-def load_best_track_files_theanh(files_pattern: str) -> pd.DataFrame:
+def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     def convert_to_date(days_since_new_year, year):
         delta = timedelta(days_since_new_year)
         new_year = datetime(year, 1, 1, 0, 0)
@@ -85,18 +88,20 @@ def load_best_track_files_theanh(files_pattern: str) -> pd.DataFrame:
         )
         storms_in_year['SID'] = storms_in_year['StormId'].apply(
             lambda id: f'{year}-{id}')
-        genesis_in_year = storms_in_year.groupby('StormId').first()
+        # genesis_in_year = storms_in_year.groupby('StormId').first()
 
         # Convert 'Days' in year to date.
-        genesis_in_year['Date'] = genesis_in_year['Days'].apply(
+        storms_in_year['Date'] = storms_in_year['Days'].apply(
             lambda days: convert_to_date(days, year))
 
 
         storms.append(
-            genesis_in_year[['SID', 'Date', 'LAT', 'LON']])
+            storms_in_year[['SID', 'Date', 'LAT', 'LON']])
 
-    storms = pd.concat(storms).sort_values('Date')
-    return storms
+    storms_df = pd.concat(storms).sort_values('Date')
+    genesis_df = storms_df.groupby('SID').first().copy()
+    genesis_df['SID'] = genesis_df.index
+    return genesis_df, storms_df
 
 
 def suggest_patch_position(center: Position, ds: xr.Dataset, domain_size: float) -> PatchPosition:
@@ -204,14 +209,16 @@ def suggest_negative_patch_center(pos_center: Position, distances: list[float], 
     raise ValueError('Cannot suggest negative center. Please check your code again!!!')
 
 
-def does_patch_contain_TC(patch: PatchPosition, best_track: pd.DataFrame) -> bool:
+def does_patch_contain_TC(date: datetime, patch: PatchPosition, best_track: pd.DataFrame) -> bool:
     lat_min = patch.lat_min
     lat_max = patch.lat_max
     lon_min = patch.lon_min
     lon_max = patch.lon_max
     
+    best_track = best_track[best_track['Date'] == date]
     tc_lon = best_track['LON']
     tc_lat = best_track['LAT']
+
     tc_in_domain = best_track[
         (tc_lon >= lon_min)
         & (tc_lon <= lon_max)
@@ -268,7 +275,7 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
 
             fn_parts = [
                 # Date.
-                datetime.strftime(row['Date'], '%Y%m%d_%H_%M'),
+                datetime.strftime(row['OriginalDate'], '%Y%m%d_%H_%M'),
                 # Center information.
                 f'{center.lat:.1f}_{center.lon:.1f}',
             ]
@@ -310,7 +317,7 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
         try:
             for neg_center in suggest_negative_patch_center(pos_center, distances, ds):
                 neg_patch_pos = suggest_patch_position(neg_center, ds, domain_size)
-                if not does_patch_contain_TC(neg_patch_pos, self.detailed_best_track):
+                if not does_patch_contain_TC(row['OriginalDate'], neg_patch_pos, self.detailed_best_track):
                     neg_patch = extract_patch(neg_patch_pos, ds)
                     save_patch(neg_patch, neg_center, False)
                     break

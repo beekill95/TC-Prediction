@@ -11,6 +11,7 @@ except ImportError:
     from tc_binary_classification_helpers import *
 
 import argparse
+from datetime import timedelta
 from functools import reduce
 import glob
 from multiprocessing import Pool
@@ -38,6 +39,12 @@ def parse_args(args=None):
         required=True,
         choices=['WP', 'EP', 'NA'],
         help='Basin to extract the storm. Accepted basins are: WP, EP, and AL.')
+    parser.add_argument(
+        '--leadtime',
+        default=0,
+        type=int,
+        help='Lead time (in hours). Default is 0h.',
+    )
     parser.add_argument(
         '--domain-size',
         dest='domain_size',
@@ -101,6 +108,7 @@ class NCEP_FNL_PositiveNegativePatchesExtractor(PositiveAndNegativePatchesExtrac
             gh='hgtprs',
             cape='capesfc',
             r='rhprs',
+            lsm='landmask',
         )
 
         # Rename variables to what we usually do.
@@ -133,18 +141,18 @@ def list_reanalysis_files(path: str) -> pd.DataFrame:
 def main(args=None):
     args = parse_args(args)
     files = list_reanalysis_files(args.ncep_fnl)
-    best_track = load_best_track(args.best_track)
-
-    print(f'{len(best_track)}')
-    print(best_track['BASIN'].unique())
+    genesis_df, storms_df = load_best_track(args.best_track)
 
     # Filter out basins.
-    best_track = best_track[best_track['BASIN'] == args.basin]
-    print(f'{len(best_track)}')
+    storms_df = storms_df[storms_df['BASIN'] == args.basin]
+    genesis_df = genesis_df[genesis_df['BASIN'] == args.basin]
     
     # Combine best track with data that we have.
     # In this step, all negative samples (observations without TC) are removed.
-    best_track = files.merge(best_track, how='inner', on='Date')
+    files['OriginalDate'] = files['Date'].copy()
+    files['Date'] = files['Date'].apply(
+        lambda date: date + timedelta(hours=args.leadtime))
+    genesis_df = files.merge(genesis_df, how='inner', on='Date')
 
     # DEBUG:
     # best_track = best_track[
@@ -152,19 +160,19 @@ def main(args=None):
     # ]
 
     # Create output directories.
-    os.makedirs(pos_output_dir(args.output), exist_ok=True)
-    os.makedirs(neg_output_dir(args.output), exist_ok=True)
+    os.makedirs(pos_output_dir(args.output))
+    os.makedirs(neg_output_dir(args.output))
 
     # Now, loop over all files and extract the patches.
     with Pool() as pool:
         tasks = pool.imap_unordered(
-            NCEP_FNL_PositiveNegativePatchesExtractor(),
+            NCEP_FNL_PositiveNegativePatchesExtractor(detailed_best_track=storms_df),
             (ExtractPosNegFnArgs(row, args.domain_size, [args.distance], args.output)
-             for _, row in best_track.iterrows()))
+             for _, row in genesis_df.iterrows()))
 
         # Loop through tasks so they get executed.
         # Also, show the progress along the way.
-        for _ in tqdm(tasks, total=len(best_track)):
+        for _ in tqdm(tasks, total=len(genesis_df)):
             pass
 
 if __name__ == '__main__':

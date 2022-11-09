@@ -100,6 +100,7 @@ def load_dataset(path: str) -> xr.Dataset:
         gh='hgtprs',
         cape='capesfc',
         r='rhprs',
+        lsm='landmask',
     )
 
     # Rename variables to what we usually do.
