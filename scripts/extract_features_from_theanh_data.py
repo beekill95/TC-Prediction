@@ -104,7 +104,8 @@ def calculate_pressure(ds: Dataset):
 
 
 def calculate_temperature(ds: Dataset):
-    return wrf.getvar(ds, 'T')
+    T_perturb = wrf.getvar(ds, 'T')
+    return T_perturb + 300
 
 
 def calculate_uwind(ds: Dataset):
@@ -170,8 +171,14 @@ def construct_xr_dataset(vars: 'dict[str, xr.DataArray]', lat: npt.ArrayLike, lo
             del attrs['projection']
         return attrs
 
-    return xr.Dataset(
-        {name: xr.Variable(specify_dimensions_name(var), var.data, filter_attrs(var.attrs)) for name, var in vars.items()},
+    ds = xr.Dataset(
+        {
+            name: xr.Variable(
+                specify_dimensions_name(var),
+                var.data,
+                filter_attrs(var.attrs))
+            for name, var in vars.items()
+        },
         coords=dict(
             lat=lat,
             lon=lon,
@@ -180,6 +187,7 @@ def construct_xr_dataset(vars: 'dict[str, xr.DataArray]', lat: npt.ArrayLike, lo
         attrs=attrs,
     )
 
+    return ds
 
 ExtractVariablesFnArgs = namedtuple(
     'ExtractVariablesFnArgs', ['path', 'outdir', 'prefix'])

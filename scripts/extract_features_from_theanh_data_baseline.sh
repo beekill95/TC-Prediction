@@ -2,7 +2,7 @@
 
 # This is the files that should be processed by the script.
 WRF_FILES=(/N/project/pfec_climo/anhvu/WRFV3/WPAC_baseline_18km/WPAC_baseline_????/raw_wrfout_d01_*)
-OUTPUT_DIR="data/theanh_WPAC_baseline_3/"
+OUTPUT_DIR="data/theanh_WPAC_baseline_4/"
 OUTPUT_PREFIX="baseline"
 
 # Execute the task.

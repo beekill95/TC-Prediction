@@ -54,7 +54,7 @@ def load_best_track(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df['Date'] = pd.to_datetime(df['ISO_TIME'], format='%Y-%m-%d %H:%M:%S')
 
     # We only care about some columns.
-    df = df[['SID', 'Date', 'LAT', 'LON']]
+    df = df[['SID', 'Date', 'LAT', 'LON', 'BASIN']]
 
     # Group by SID, and only retain the first row.
     genesis_df = df.groupby('SID', sort=False).first()
@@ -70,16 +70,27 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
         new_year = datetime(year, 1, 1, 0, 0)
         return new_year + delta
 
-    def parse_year(file_path):
+    def parse_year_from_dir(file_path):
         parent_dir = os.path.dirname(file_path).split(os.path.sep)[-1]
         year_part = parent_dir.split('_')[-1]
+        return int(year_part)
+
+    def parse_year_from_file(file_path):
+        parent_dir = os.path.dirname(file_path).split(os.path.sep)[-1]
+        filename = os.path.basename(file_path)
+        name, _ = os.path.splitext(filename)
+        year_part = name.split('_')[-1]
         return int(year_part)
 
     files = glob.iglob(files_pattern)
 
     storms = []
     for file in files:
-        year = parse_year(file)
+        try:
+            year = parse_year_from_dir(file)
+        except ValueError:
+            year = parse_year_from_file(file)
+
         storms_in_year = pd.read_csv(
             file,
             names=['Days', 'StormId', 'LON', 'LAT'],
