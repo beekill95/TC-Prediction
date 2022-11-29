@@ -1,31 +1,57 @@
+from collections import OrderedDict
 import numpy as np
 import pandas as pd
 from typing import Tuple
 import xarray as xr
 
-def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
-    data = []
-    for var in dataset.data_vars:
-        var = var.lower()
-        if subset is not None and var in subset:
-            if subset[var] is not None:
-                values = dataset[var].sel(lev=subset[var]).values
-            else:
-                continue
+def extract_variables_from_dataset(ds: xr.Dataset, subset: OrderedDict):
+    tensors = []
+    for key, lev in subset.items():
+        values = None
+        if isinstance(lev, bool):
+            if lev:
+                values = ds[key].values
         else:
-            values = dataset[var].values
+            try:
+                values = ds[key].sel(lev=list(lev)).values
+            except Exception:
+                print('Error', path, ds[key]['lev'])
+                raise ValueError('error')
 
-        # For 2D dataarray, make it 3D.
-        if len(np.shape(values)) != 3:
-            values = np.expand_dims(values, 0)
+        if values is not None:
+            if values.ndim == 2:
+                values = values[None, ...]
 
-        data.append(values)
+            tensors.append(values)
 
-    # Reshape data so that it have channel_last format.
-    data = np.concatenate(data, axis=0)
-    data = np.moveaxis(data, 0, -1)
+    tensors = np.concatenate(tensors, axis=0)
+    tensors = np.moveaxis(tensors, 0, -1)
 
-    return data
+    return tensors
+
+    # Old version
+    # data = []
+    # for var in dataset.data_vars:
+    #     var = var.lower()
+    #     if subset is not None and var in subset:
+    #         if subset[var] is not None:
+    #             values = dataset[var].sel(lev=subset[var]).values
+    #         else:
+    #             continue
+    #     else:
+    #         values = dataset[var].values
+
+    #     # For 2D dataarray, make it 3D.
+    #     if len(np.shape(values)) != 3:
+    #         values = np.expand_dims(values, 0)
+
+    #     data.append(values)
+
+    # # Reshape data so that it have channel_last format.
+    # data = np.concatenate(data, axis=0)
+    # data = np.moveaxis(data, 0, -1)
+
+    # return data
 
 
 def split_dataset_into_postive_negative_samples(dataset: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:

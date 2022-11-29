@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.14.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -15,10 +15,12 @@
 
 # %cd ../..
 
+from collections import OrderedDict
 from datetime import datetime
 from tc_formation.models import unet
 from tc_formation import tf_metrics as tfm
 from tc_formation.metrics.bb import BBoxesIoUMetric
+from tc_formation.losses import physical_consistent_losses as pcl
 import tc_formation.data.time_series as ts_data
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -33,7 +35,7 @@ data_path = 'data/ncep_WP_EP_new/TODO'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
-subset = dict(
+subset = OrderedDict(
     absvprs=[900, 750],
     rhprs=[750],
     tmpprs=[900, 500],
@@ -41,8 +43,8 @@ subset = dict(
     vvelprs=[500],
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
-    #capesfc=None,
-    #tmpsfc=None,
+    capesfc=True,
+    tmpsfc=True,
 )
 data_shape = (41, 161, 13)
 
@@ -54,10 +56,10 @@ normalization_layer = layers.Normalization()
 model = unet.Unet(
     input_tensor=normalization_layer(input_layer),
     model_name='unet',
-    classifier_activation=None,
+    classifier_activation='sigmoid',
     output_classes=1,
     decoder_shortcut_mode='add',
-    filters_block=[64, 128, 256, 512, 1024])
+    filters_block=[64, 128])
 
 outputs = model.outputs
 
@@ -92,6 +94,9 @@ features = training.map(lambda feature, _: feature)
 normalization_layer.adapt(features)
 
 # +
+from functools import reduce # noqa
+
+
 def dice_loss(y_true, y_pred):
     y_true = tf.cast(y_true, tf.float32)
     # y_pred = tf.math.sigmoid(y_pred)
@@ -101,13 +106,26 @@ def dice_loss(y_true, y_pred):
     return 1 - numerator / denominator
 
 
-def SST_loss(_, y_pred, inputs, sst_idx):
-    sst = inputs[:, :, :, sst_idx]
-    return y_pred * tf.nn.relu(27.5 - sst)
+def multiple_losses(loss_fn: list, loss_weights: list | None):
+    if loss_weights is None:
+        loss_weights = [1.] * len(loss_fn)
+    else:
+        assert len(loss_fn) == len(loss_weights)
+    
+    def _combined_loss(y_true, y_pred):
+        return reduce(
+            lambda acc, cur: acc + cur[1] * cur[0](y_true, y_pred),
+            zip(loss_fn, loss_weights), 0.0)
+    
+    return _combined_loss
 
 
 model.compile(
     optimizer='adam',
+    loss=multiple_losses([
+        dice_loss,
+        pcl.sst_loss(input_layer[:, :, :, 12]),
+    ])
     # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
     # loss=combine_loss_funcs(hard_negative_mined_sigmoid_focal_loss, dice_loss),
     # loss=dice_loss,

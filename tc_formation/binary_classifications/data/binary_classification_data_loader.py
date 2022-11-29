@@ -24,7 +24,7 @@ class BinaryClassificationDataLoader():
             self, data_dir: str, batch_size=64, shuffle=True,
             val_split=0.0, test_split=0.0) -> tuple[tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
         def split_train_val(patches: tf.data.Dataset):
-            assert (val_split + test_split) < 1.0
+            assert (val_split + test_split) <= 1.0
 
             nb_patches = patches.cardinality().numpy()
 
@@ -96,7 +96,8 @@ def fill_nan_with_mean(values: np.ndarray) -> np.ndarray:
     return np.where(nanmask, means * np.ones_like(values), values)
 
 
-def load_xr_dataset_as_numpy_array(path: str, subset: SubsetDict, output_size: tuple[int, int]): # -> dict[str, tf.Tensor]:
+def load_xr_dataset_as_numpy_array(
+        path: str, subset: SubsetDict, output_size: tuple[int, int]): # -> dict[str, tf.Tensor]:
     ds = xr.load_dataset(path, engine='netcdf4')
     tensors = []
     for key, lev in subset.items():

@@ -1,4 +1,5 @@
 import abc
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import partial
 import tc_formation.data.label as label
@@ -13,7 +14,7 @@ import xarray as xr
 
 
 class TimeSeriesTropicalCycloneDataLoader:
-    def __init__(self, data_shape, previous_hours:List[int] = [6, 12, 18], subset=None):
+    def __init__(self, data_shape, previous_hours:List[int] = [6, 12, 18], subset: OrderedDict = None):
         self._data_shape = data_shape
         self._previous_hours = previous_hours
         self._subset = subset
@@ -270,7 +271,7 @@ class TimeSeriesTropicalCycloneWithGridProbabilityDataLoader(TimeSeriesTropicalC
     def _load_reanalysis_and_gt(
             cls,
             paths: List[str],
-            subset: dict,
+            subset: OrderedDict,
             has_tc: bool,
             data_shape: tuple,
             tc_latitudes: float,
@@ -414,7 +415,7 @@ class TimeSeriesTropicalCycloneWithLocationDataLoader(TimeSeriesTropicalCycloneD
     def _load_reanalysis_and_loc(
             cls,
             paths: List[str],
-            subset: dict,
+            subset: OrderedDict,
             has_tc: bool,
             tc_latitudes: float,
             tc_longitudes: float,

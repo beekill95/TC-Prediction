@@ -66,7 +66,11 @@ def load_best_track(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     def convert_to_date(days_since_new_year, year):
-        delta = timedelta(days_since_new_year)
+        # Base on what I found,
+        # 121 corresponds to May 1st
+        # 153 corresponds to Jun 2nd
+        # So, in order to get that, we have to minus 1 from the days_since_new_year.
+        delta = timedelta(days_since_new_year - 1)
         new_year = datetime(year, 1, 1, 0, 0)
         return new_year + delta
 
@@ -76,7 +80,6 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
         return int(year_part)
 
     def parse_year_from_file(file_path):
-        parent_dir = os.path.dirname(file_path).split(os.path.sep)[-1]
         filename = os.path.basename(file_path)
         name, _ = os.path.splitext(filename)
         year_part = name.split('_')[-1]
@@ -90,6 +93,7 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
             year = parse_year_from_dir(file)
         except ValueError:
             year = parse_year_from_file(file)
+
 
         storms_in_year = pd.read_csv(
             file,
@@ -105,11 +109,12 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
         storms_in_year['Date'] = storms_in_year['Days'].apply(
             lambda days: convert_to_date(days, year))
 
-
         storms.append(
             storms_in_year[['SID', 'Date', 'LAT', 'LON']])
 
     storms_df = pd.concat(storms).sort_values('Date')
+    print(storms_df[storms_df['Date'] == datetime(1989, 7, 7, 0, 0)])
+
     genesis_df = storms_df.groupby('SID').first().copy()
     genesis_df['SID'] = genesis_df.index
     return genesis_df, storms_df

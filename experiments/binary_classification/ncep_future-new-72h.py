@@ -40,22 +40,21 @@ subset = OrderedDict(
     # tmpsfc=True,
     pressfc=True,
 )
-corresponding_name = {
-    'pressfc': 'slp',
-    
-}
-subset_theanh = OrderedDict(
-    (corresponding_name.get(key, key), val) for key, val in subset.items()
-)
-print(subset_theanh)
+# corresponding_name = {
+#     'pressfc': 'slp',
+# }
+# subset_theanh = OrderedDict(
+#     (corresponding_name.get(key, key), val) for key, val in subset.items()
+# )
+# print(subset_theanh)
 input_shape = (30, 30, 12)
 dataloader = BinaryClassificationDataLoader((30, 30), subset)
-dataloader_theanh = BinaryClassificationDataLoader((30, 30), subset_theanh)
-ncep_path = '/N/project/pfec_climo/qmnguyen/tc_prediction/binary_datasets/ncep_WP_tc_binary'
-future_rcp45_path = 'data/theanh_WPAC_RCP45_binary'
+# dataloader_theanh = BinaryClassificationDataLoader((30, 30), subset_theanh)
+ncep_path = 'data/binary_datasets/ncep_WP_binary_72h'
+future_rcp45_path = 'data/binary_datasets/WRF_RCP45_5_binary_72h'
 
 ncep_train_ds, _, _ = dataloader.load_dataset(ncep_path,)
-rcp45_train_ds, rcp45_val_ds, rcp45_test_ds = dataloader_theanh.load_dataset(
+rcp45_train_ds, rcp45_val_ds, rcp45_test_ds = dataloader.load_dataset(
     future_rcp45_path, val_split=0.1, test_split=0.8, shuffle=False)
 # for X, y in iter(ncep_ds):
 #     print(X)
@@ -72,8 +71,9 @@ def set_shape(shape):
 ncep_train_ds = ncep_train_ds.map(set_shape((None,) + input_shape))
 # ncep_val_ds = ncep_val_ds.map(set_shape((None,) + input_shape))
 rcp45_train_ds = rcp45_train_ds.map(set_shape((None,) + input_shape))
-rcp45_val_ds = rcp45_val_ds.map(set_shape((None,) + input_shape))
 rcp45_test_ds = rcp45_test_ds.map(set_shape((None,) + input_shape))
+rcp45_val_ds = rcp45_val_ds.map(set_shape((None,) + input_shape))
+# -
 
 train_ds = ncep_train_ds.concatenate(rcp45_train_ds)
 
@@ -146,61 +146,3 @@ model.fit(
 )
 
 model.evaluate(rcp45_test_ds)
-
-# +
-import xarray as xr # noqa
-import numpy as np # noqa
-
-# ds = xr.load_dataset('data/theanh_WPAC_RCP45_binary/pos/20820811_00_00_21.4_143.0_2082-108.nc')
-# ds = xr.load_dataset('data/theanh_WPAC_RCP45_binary/neg/20910727_00_00_16.0_187.1.nc')
-# ds = xr.load_dataset('data/theanh_WPAC_RCP45_2/RCP45_20910727_00_00.nc')
-# ds = xr.load_dataset('data/theanh_WPAC_RCP45_binary/pos/20910727_00_00_16.0_147.1_2091-108.nc')
-# ds
-# a = ds['absvprs'].sel(lev=[1000, 500])
-# np.isnan(a).sum()
-# +
-import matplotlib.pyplot as plt # noqa
-
-max_nb = 10
-first_batch = next(iter(rcp45_test_ds))
-predictions = tf.sigmoid(model.predict(first_batch[0]))
-for i in range(10):
-    X = first_batch[0][i]
-    print(predictions[i])
-    # print(X.shape)
-    absv_900 = X[:, :, 0]
-    absv_500 = X[:, :, 1]
-    pressfc = X[:, :, -1]
-
-    fig, axes = plt.subplots(ncols=3)
-    ax = axes[0]
-    ax.pcolormesh(absv_900)
-    ax = axes[1]
-    ax.pcolormesh(absv_500)
-    ax = axes[2]
-    ax.pcolormesh(pressfc)
-    fig.tight_layout()
-# -
-
-
-for X, y in iter(rcp45_test_ds):
-    if tf.reduce_sum(y) == 0:
-        predictions = tf.sigmoid(model.predict(X))
-
-        for i in range(10):
-            X_img = X[i]
-            print(predictions[i])
-            absv_900 = X_img[:, :, 0]
-            absv_500 = X_img[:, :, 1]
-            pressfc = X_img[:, :, -1]
-
-            fig, axes = plt.subplots(ncols=3)
-            ax = axes[0]
-            ax.pcolormesh(absv_900)
-            ax = axes[1]
-            ax.pcolormesh(absv_500)
-            ax = axes[2]
-            ax.pcolormesh(pressfc)
-            fig.tight_layout()
-
-        break

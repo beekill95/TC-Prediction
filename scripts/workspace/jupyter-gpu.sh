@@ -1,9 +1,12 @@
 #!/bin/bash -i
 
-# Activate conda environment with tensorflow-gpu
 conda activate tc_updated_2
-# conda activate iub
-module load deeplearning
+
+# Activate conda environment with tensorflow-gpu
+require_cuda=${3-true}
+if [[ $require_cuda == "true" ]]; then
+    module load deeplearning
+fi
 
 # Then, forward port back to h2
 server=${1-h2}
