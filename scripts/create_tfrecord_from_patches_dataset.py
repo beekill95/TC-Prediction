@@ -56,6 +56,11 @@ def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
+def _int64_feature(values):
+  """Returns an int64_list from a bool / enum / int / uint."""
+  return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
+
+
 def _numpy_feature(value: np.ndarray):
     value_bytes = value.tobytes()
     return _bytes_feature(value_bytes)
@@ -64,6 +69,7 @@ def _numpy_feature(value: np.ndarray):
 def _to_example(value: np.ndarray, pos: np.ndarray, path: str):
     feature = dict(
         data=_numpy_feature(value),
+        data_shape=_int64_feature(value.shape),
         position=_numpy_feature(pos),
         filename=_bytes_feature(str.encode(path)),
     )

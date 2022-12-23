@@ -22,8 +22,10 @@ def new_py_function(func, inp, Tout, name=None):
     out = tf.nest.pack_sequence_as(spec_out, flat_out, expand_composites=True)
     return out
 
+
 def _dtype_to_tensor_spec(v):
     return tf.TensorSpec(None, v) if isinstance(v, tf.dtypes.DType) else v
+
 
 def _tensor_spec_to_dtype(v):
     return v.dtype if isinstance(v, tf.TensorSpec) else v

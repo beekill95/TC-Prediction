@@ -1,19 +1,21 @@
+"""
+Don't use this. It is extremely slow!!
+"""
 from __future__ import annotations
 
 from collections import OrderedDict
 import glob
-import json
 import logging
 import numpy as np
 import os
-import pandas as pd
 from skimage import transform
 import tensorflow as tf
 from typing import Union, Iterator
 import xarray as xr
 
+from .utils import *
 
-SubsetDict = OrderedDict[str, Union[tuple[float, ...], bool]]
+
 KEEP_HOURS = [0, 6, 12, 18]
 
 
@@ -53,7 +55,7 @@ class PatchesClassificationDataLoader():
                     domain_size=self._domain_size,
                     stride=self._stride),
                 [path],
-                Tout=[tf.float64, tf.float64],
+                Tout=[tf.float64, tf.float64, tf.string],
                 name='load_xr_dataset_as_patches'),
              num_parallel_calls=tf.data.AUTOTUNE)
 
@@ -61,6 +63,7 @@ class PatchesClassificationDataLoader():
         ds = ds.batch(batch_size)
 
         return ds.prefetch(1)
+
 
 def list_nc_files(folder: str, keep_hours: list[int]) -> tf.data.Dataset:
     def is_time_of_day_valid(path: str) -> bool:
@@ -75,7 +78,7 @@ def list_nc_files(folder: str, keep_hours: list[int]) -> tf.data.Dataset:
     return tf.data.Dataset.from_tensor_slices(files)
 
 
-def load_xr_dataset_as_patches(path: str, subset: SubsetDict, domain_size: float, stride: float) -> tuple[np.ndarray, np.ndarray]:
+def load_xr_dataset_as_patches(path: str, subset: SubsetDict, domain_size: float, stride: float) -> tuple[np.ndarray, np.ndarray, str]:
     ds = xr.load_dataset(path, engine='netcdf4')
     ds = fill_missing_values(ds)
 
@@ -89,7 +92,7 @@ def load_xr_dataset_as_patches(path: str, subset: SubsetDict, domain_size: float
         logging.error(f'Cannot extract patches from file: {path}', e)
         raise e
 
-    return patches, np.asarray(coords)
+    return patches, np.asarray(coords), path
 
 
 def extract_patches(ds: xr.Dataset, domain_size: float, stride: float) -> Iterator[tuple[xr.Dataset, tuple[float, float]]]:
@@ -114,26 +117,6 @@ def extract_patches(ds: xr.Dataset, domain_size: float, stride: float) -> Iterat
                 yield patch, (domain_lower_lat, domain_lower_lon)
 
 
-def extract_subset(ds: xr.Dataset, subset: SubsetDict) -> np.ndarray:
-    tensors = []
-    for key, lev in subset.items():
-        values = None
-        if isinstance(lev, bool):
-            if lev:
-                values = ds[key].values
-        else:
-            values = ds[key].sel(lev=list(lev)).values
-
-        if values is not None:
-            if values.ndim == 2:
-                values = values[None, ...]
-
-            tensors.append(values)
-
-    tensors = np.concatenate(tensors, axis=0)
-    tensors = np.moveaxis(tensors, 0, -1)
-    return tensors
-
 
 def resize_to_the_smallest_size(patches: list[np.ndarray]) -> list[np.ndarray]:
     # Find the smallest size.
@@ -144,8 +127,3 @@ def resize_to_the_smallest_size(patches: list[np.ndarray]) -> list[np.ndarray]:
     patches = [transform.resize(
         p, output_shape=smallest_size, preserve_range=True) for p in patches]
     return patches
-
-
-def fill_missing_values(ds: xr.Dataset) -> xr.Dataset:
-    mean_values = ds.mean(dim=['lat', 'lon'], skipna=True)
-    return ds.fillna(mean_values)
