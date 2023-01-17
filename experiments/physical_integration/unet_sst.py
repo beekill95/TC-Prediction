@@ -31,7 +31,7 @@ import tensorflow_addons as tfa
 
 exp_name = 'tc_grid_prob_unet_physical_integration'
 runtime = datetime.now().strftime('%Y_%b_%d_%H_%M')
-data_path = 'data/ncep_WP_EP_new/TODO'
+data_path = 'data/ncep_WP_EP_new_2/tc_12h.csv'
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
@@ -51,6 +51,7 @@ data_shape = (41, 161, 13)
 # ## Unet Model
 
 # +
+expected_output_layer = keras.Input(data_shape[:2] + (1,))
 input_layer = keras.Input(data_shape)
 normalization_layer = layers.Normalization()
 model = unet.Unet(
@@ -62,6 +63,10 @@ model = unet.Unet(
     filters_block=[64, 128])
 
 outputs = model.outputs
+
+model = keras.Model(
+    inputs=[input_layer, expected_output_layer],
+    outputs=outputs)
 
 model.summary()
 # -
@@ -93,6 +98,10 @@ validation = data_loader.load_dataset(
 features = training.map(lambda feature, _: feature)
 normalization_layer.adapt(features)
 
+# Convert dataset to provide two inputs.
+training = training.map(lambda X, y: ((X, y), y))
+validation = validation.map(lambda X, y: ((X, y), y))
+
 # +
 from functools import reduce # noqa
 
@@ -106,42 +115,36 @@ def dice_loss(y_true, y_pred):
     return 1 - numerator / denominator
 
 
-def multiple_losses(loss_fn: list, loss_weights: list | None):
-    if loss_weights is None:
-        loss_weights = [1.] * len(loss_fn)
-    else:
-        assert len(loss_fn) == len(loss_weights)
+# def multiple_losses(loss_fn: list, loss_weights: list):
+#     if loss_weights is None:
+#         loss_weights = [1.] * len(loss_fn)
+#     else:
+#         assert len(loss_fn) == len(loss_weights)
     
-    def _combined_loss(y_true, y_pred):
-        return reduce(
-            lambda acc, cur: acc + cur[1] * cur[0](y_true, y_pred),
-            zip(loss_fn, loss_weights), 0.0)
+#     def _combined_loss(y_true, y_pred):
+#         return reduce(
+#             lambda acc, cur: acc + cur[1] * cur[0](y_true, y_pred),
+#             zip(loss_fn, loss_weights), 0.0)
     
-    return _combined_loss
+#     return _combined_loss
 
 
+model.add_loss(
+    pcl.sst_loss(input_layer[:, :, :, 12:])(expected_output_layer, outputs))
 model.compile(
     optimizer='adam',
-    loss=multiple_losses([
-        dice_loss,
-        pcl.sst_loss(input_layer[:, :, :, 12]),
-    ])
-    # loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-    # loss=combine_loss_funcs(hard_negative_mined_sigmoid_focal_loss, dice_loss),
-    # loss=dice_loss,
-    # loss=tf.losses.KLDivergence(),
-    # loss=hard_negative_mined_sigmoid_focal_loss,
-    # loss=hard_negative_mined_binary_crossentropy_loss,
+    loss=dice_loss,
     metrics=[
-        #'binary_accuracy',
-        #keras.metrics.Recall(name='recall', class_id=1 if use_softmax else None),
-        #keras.metrics.Precision(name='precision', class_id=1 if use_softmax else None),
-        #tfm.CustomF1Score(name='f1', class_id=1 if use_softmax else None),
-        #BBoxesIoUMetric(name='IoU', iou_threshold=0.2),
-        #tfa.metrics.F1Score(num_classes=1, threshold=0.5),
-        #tfm.PrecisionScore(from_logits=True),
-        #tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
-    ])
+        'binary_accuracy',
+        # keras.metrics.Recall(name='recall', class_id=1 if use_softmax else None),
+        # keras.metrics.Precision(name='precision', class_id=1 if use_softmax else None),
+        tfm.CustomF1Score(name='f1'),
+        BBoxesIoUMetric(name='IoU', iou_threshold=0.2),
+        # tfa.metrics.F1Score(num_classes=1, threshold=0.5),
+        # tfm.PrecisionScore(from_logits=True),
+        # tfm.F1Score(num_classes=1, from_logits=True, threshold=0.5),
+    ],
+)
 
 epochs = 150
 model.fit(

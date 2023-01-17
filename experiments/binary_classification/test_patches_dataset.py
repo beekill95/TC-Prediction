@@ -72,6 +72,7 @@ plot_patch(ds)
 # Next, we will extract patches to see if they're good.
 patches = extract_patches(ds, domain_size=30, stride=5)
 for p, coord in patches:
+    print(p['tmpsfc'].values.shape)
     plot_patch(p, title=f'{coord=}')
 
 # ## Test `load_xr_dataset_as_patches`
@@ -80,7 +81,7 @@ for p, coord in patches:
 subset = OrderedDict(
     tmpsfc=True,
 )
-patches, coords = load_xr_dataset_as_patches(
+patches, coords, _ = load_xr_dataset_as_patches(
     path, subset=subset, domain_size=30, stride=5)
 assert len(patches) == 10, 'Because there are 10 patches above!'
 fig, axes = plt.subplots(nrows=2, ncols=5, figsize=(12, 6))
@@ -96,7 +97,7 @@ fig.tight_layout()
 dataloader = PatchesClassificationDataLoader(
     domain_size=30, stride=5, subset=subset, keep_hours=[0])
 ds = dataloader.load_dataset_without_label('./data/theanh_WPAC_baseline_5', batch_size=4)
-for X, coords in iter(ds):
+for X, coords, _ in iter(ds):
     print(f'{coords=}')
-    print(f'{X=}')
+    print(f'{X.shape=}')
     break

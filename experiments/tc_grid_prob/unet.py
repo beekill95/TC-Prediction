@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.8
+#       jupytext_version: 1.14.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -15,6 +15,10 @@
 
 # %cd ../..
 
+# %load_ext autoreload
+# %autoreload 2
+
+from collections import OrderedDict
 from datetime import datetime
 from tc_formation.models import unet
 from tc_formation import tf_metrics as tfm
@@ -38,14 +42,16 @@ data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_1
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
-subset = dict(
+subset = OrderedDict(
     absvprs=[900, 750],
+    capesfc=True,
+    hgtprs=[500],
     rhprs=[750],
     tmpprs=[900, 500],
-    hgtprs=[500],
-    vvelprs=[500],
+    tmpsfc=True,
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
+    vvelprs=[500],
 )
 data_shape = (41, 161, 13)
 # subset = dict(
@@ -227,7 +233,9 @@ def plot_tc_occurence_prob(
         basemap: Basemap = None,
         *args, **kwargs):
     lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
-    cs = basemap.contourf(lats, longs, prob, cmap='OrRd', levels=np.arange(0, 1.01, 0.05))
+    # TODO: changed from 0.0 -> 0.01
+    prob[prob < 0.1] = np.nan
+    cs = basemap.contourf(lats, longs, prob, cmap='Reds', levels=np.arange(0., 1.01, 0.05))
     basemap.colorbar(cs, "right", size="5%", pad="2%")
     
 @decorators._with_axes

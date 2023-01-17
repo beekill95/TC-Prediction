@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.13.4
+#       jupytext_version: 1.14.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -15,7 +15,6 @@
 
 # %cd ../..
 
-# +
 from collections import OrderedDict
 from tc_formation.data import data
 import tc_formation.models.resnet as resnet
@@ -27,10 +26,6 @@ import tensorflow_addons as tfa
 from datetime import datetime
 import numpy as np
 
-gpu_devices = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpu_devices[0], True)
-# -
-
 # # Feature Importance of ResNet 18 on Multiple Leadtime and Large Domain
 
 # ## Data
@@ -41,15 +36,6 @@ data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_1
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
-# subset = dict(
-#     absvprs=[900, 750],
-#     rhprs=[750],
-#     tmpprs=[900, 500],
-#     hgtprs=[500],
-#     vvelprs=[500],
-#     ugrdprs=[800, 200],
-#     vgrdprs=[800, 200],
-# )
 subset = OrderedDict(
     absvprs=[900, 750],
     capesfc=True,
@@ -62,10 +48,12 @@ subset = OrderedDict(
     vvelprs=[500],
 )
 data_shape = (41, 161, 13)
-nb_features_to_select = 4
+nb_features_to_select = 6
 
 # Load data into memory.
 
+# This load_data_v1 implementation has been changed to use new ordered subset,
+# therefore, the previous version will yield different selected features.
 full_training = data.load_data_v1(
     train_path,
     data_shape=data_shape,
@@ -127,47 +115,37 @@ def build_resnet_model(data_shape):
 # +
 from tc_formation.features_selection.forward_features_selection import ForwardFeaturesSelection
 
-initial_features = np.asarray([0., 0., 1., 0., 0., 0., 0., 0., 1., 0., 1., 0., 0.])
+initial_features = np.asarray(
+    [0., 0., 1., 0., 0., 0., 0., 1., 1., 0., 1., 1., 0.])
 
-selector = ForwardFeaturesSelection(
-    model_fn=build_resnet_model,
-    data_shape=data_shape,
-    nb_features_to_select=nb_features_to_select)
-selector.fit(full_training, validation, initial_features=initial_features)
+nb_selectors = 20
+selectors = []
 
-print('Best proposal: ', selector.best_proposal(), ' with score: ', selector.best_proposal_score())
+for i in range(nb_selectors):
+    print(f'==== Begin SELECTOR #{i}')
 
-# + tags=[]
-selector1 = ForwardFeaturesSelection(
-    model_fn=build_resnet_model,
-    data_shape=data_shape,
-    nb_features_to_select=nb_features_to_select)
-selector1.fit(full_training, validation, initial_features=initial_features)
+    selector = ForwardFeaturesSelection(
+        model_fn=build_resnet_model,
+        data_shape=data_shape,
+        nb_features_to_select=nb_features_to_select)
+    selector.fit(full_training, validation, initial_features=initial_features)
+    selectors.append(selector)
 
-print('Best proposal: ', selector1.best_proposal(), ' with score: ', selector1.best_proposal_score())
-
-# +
-selector2 = ForwardFeaturesSelection(
-    model_fn=build_resnet_model,
-    data_shape=data_shape,
-    nb_features_to_select=nb_features_to_select)
-selector2.fit(full_training, validation, initial_features=initial_features)
-
-print('Best proposal: ', selector2.best_proposal(), ' with score: ', selector2.best_proposal_score())
-
-# +
-selector3 = ForwardFeaturesSelection(
-    model_fn=build_resnet_model,
-    data_shape=data_shape,
-    nb_features_to_select=nb_features_to_select)
-selector3.fit(full_training, validation, initial_features=initial_features)
-
-print('Best proposal: ', selector3.best_proposal(), ' with score: ', selector3.best_proposal_score())
 # -
 
-print('Best proposal: ', selector.best_proposal(), ' with score: ', selector.best_proposal_score())
-print('Best proposal: ', selector1.best_proposal(), ' with score: ', selector1.best_proposal_score())
-print('Best proposal: ', selector2.best_proposal(), ' with score: ', selector2.best_proposal_score())
-print('Best proposal: ', selector3.best_proposal(), ' with score: ', selector3.best_proposal_score())
+for selector in selectors:
+    print('Best proposal: ', selector.best_proposal(),
+          ' with score: ', selector.best_proposal_score())
 
-# $\Rightarrow$ The best features are 3 features from previous run, and vgrdprs @ 200
+# absvprs [900, 750]
+# capesfc
+# hgtprs [500]
+# rhprs [750]
+# tmpprs [900, 500]
+# tmpsfc
+# ugrdprs [800, 200]
+# vgrdprs [800, 200]
+# vvelprs [500]
+# -
+
+# $\Rightarrow$ It seems that the best 6 features are: 4 best features and ...

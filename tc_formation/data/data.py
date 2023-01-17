@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from . import utils as data_utils
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from functools import reduce, partial
 import glob
@@ -57,30 +60,53 @@ def load_tc_with_observation_path(data_dir):
         right_on='Observation')
 
 
-def extract_variables_from_dataset(dataset: xr.Dataset, subset: dict = None):
-    data = []
-    for var in dataset.data_vars:
-        if subset is not None and var in subset:
-            if subset[var] is not None:
-                values = dataset[var].sel(lev=subset[var]).values
-            else:
-                continue
-            # print(var, subset[var])
+def extract_variables_from_dataset(dataset: xr.Dataset, subset: OrderedDict | None = None):
+    # data = []
+    # for var in dataset.data_vars:
+    #     if subset is not None and var in subset:
+    #         if subset[var] is not None:
+    #             values = dataset[var].sel(lev=subset[var]).values
+    #         else:
+    #             continue
+    #         # print(var, subset[var])
+    #     else:
+    #         values = dataset[var].values
+    #         # print(var)
+
+    #     # For 2D dataarray, make it 3D.
+    #     if len(np.shape(values)) != 3:
+    #         values = np.expand_dims(values, 0)
+
+    #     data.append(values)
+
+    # # Reshape data so that it have channel_last format.
+    # data = np.concatenate(data, axis=0)
+    # data = np.moveaxis(data, 0, -1)
+
+    # return data
+
+    if subset is None:
+        return dataset.values
+
+    tensors = []
+    for key, lev in subset.items():
+        values = None
+        if isinstance(lev, bool):
+            if lev:
+                values = dataset[key].values
         else:
-            values = dataset[var].values
-            # print(var)
+            values = dataset[key].sel(lev=list(lev)).values
 
-        # For 2D dataarray, make it 3D.
-        if len(np.shape(values)) != 3:
-            values = np.expand_dims(values, 0)
+        if values is not None:
+            if values.ndim == 2:
+                values = values[None, ...]
 
-        data.append(values)
+            tensors.append(values)
 
-    # Reshape data so that it have channel_last format.
-    data = np.concatenate(data, axis=0)
-    data = np.moveaxis(data, 0, -1)
+    tensors = np.concatenate(tensors, axis=0)
+    tensors = np.moveaxis(tensors, 0, -1)
+    return tensors
 
-    return data
 
 """DEPRECATED: should favor the same method in label module."""
 def filter_in_leadtime(tc: pd.DataFrame, leadtimes: Union[List[int], int] = None):

@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 
 """
 This is the python version of the `extract_environmental_features_without_labels.py`
@@ -45,6 +45,11 @@ def parse_arguments(args=None):
         type=float,
         nargs=2,
         help='Range of longitudes of the to be extracted domain.')
+    parser.add_argument(
+        '--processes', '-p',
+        type=int,
+        default=8,
+        help='Number of parallel processes. Default to 8.')
 
     return parser.parse_args(args)
 
@@ -78,7 +83,47 @@ def load_dataset(path: str) -> xr.Dataset:
             for v in variables]
 
         ds = reduce(lambda acc, cur: acc.merge(cur), datasets[1:], datasets[0])
-        return ds.sel(isobaricInhPa=slice(200, 1e3))
+        assert len(ds['isobaricInhPa'].values) > 0, f'Empty pressure levels for {path}'
+        ds = ds.where((ds['isobaricInhPa'] >= 200) & (ds['isobaricInhPa'] <= 1e3), drop=True)
+        return ds
+
+    # common_ds = load_common_ds()
+
+    # surface_ds = load_grib2(
+    #     path, filter_by_keys=dict(typeOfLevel='surface'))
+    # surface_ds = surface_ds.rename_vars(dict(t='tsfc'))
+
+    # # Merge datasets.
+    # merged_ds = common_ds.merge(surface_ds)
+
+    # rename_vars = dict(
+    #     u='ugrdprs',
+    #     v='vgrdprs',
+    #     w='vvelprs',
+    #     absv='absvprs',
+    #     t='tmpprs',
+    #     tsfc='tmpsfc',
+    #     sp='pressfc',
+    #     gh='hgtprs',
+    #     cape='capesfc',
+    #     r='rhprs',
+    #     lsm='landmask',
+    # )
+
+    # # Rename variables to what we usually do.
+    # merged_ds = merged_ds.rename_vars(rename_vars)
+
+    # # Only retain what we care.
+    # remove_vars = [var.name
+    #                for var in merged_ds.data_vars.values()
+    #                if var.name not in rename_vars.values()]
+    # merged_ds = merged_ds.drop_vars(remove_vars)
+
+    # # Rename coordinates.
+    # merged_ds = merged_ds.rename(
+    #     dict(latitude='lat', longitude='lon', isobaricInhPa='lev'))
+
+    # return merged_ds
 
     common_ds = load_common_ds()
 
@@ -169,7 +214,7 @@ def main(args=None):
     # Make output directory.
     os.makedirs(args.outputdir)
 
-    with Pool() as pool:
+    with Pool(args.processes) as pool:
         tasks = pool.imap_unordered(
             extract_domain,
             (ExtractDomainArgs(

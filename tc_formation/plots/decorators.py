@@ -40,7 +40,8 @@ def _with_basemap(func):
                 basemap.drawcoastlines()
                 basemap.drawstates()
                 basemap.drawcountries()
-                basemap.drawlsmask(land_color='Linen', ocean_color='#CCFFFF')
+                basemap.drawlsmask(
+                    land_color='white', ocean_color='white')
                 basemap.drawcounties()
 
                 # Assign basemap to ax for future reference.

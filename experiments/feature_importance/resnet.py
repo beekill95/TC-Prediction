@@ -15,6 +15,7 @@
 
 # %cd ../..
 
+from collections import OrderedDict
 from tc_formation.data import data
 import tc_formation.models.resnet as resnet
 import tc_formation.tf_metrics as tfm
@@ -35,14 +36,25 @@ data_path = 'data/nolabels_wp_ep_alllevels_ABSV_CAPE_RH_TMP_HGT_VVEL_UGRD_VGRD_1
 train_path = data_path.replace('.csv', '_train.csv')
 val_path = data_path.replace('.csv', '_val.csv')
 test_path = data_path.replace('.csv', '_test.csv')
-subset = dict(
+# subset = dict(
+#     absvprs=[900, 750],
+#     rhprs=[750],
+#     tmpprs=[900, 500],
+#     hgtprs=[500],
+#     vvelprs=[500],
+#     ugrdprs=[800, 200],
+#     vgrdprs=[800, 200],
+# )
+subset = OrderedDict(
     absvprs=[900, 750],
+    capesfc=True,
+    hgtprs=[500],
     rhprs=[750],
     tmpprs=[900, 500],
-    hgtprs=[500],
-    vvelprs=[500],
+    tmpsfc=True,
     ugrdprs=[800, 200],
     vgrdprs=[800, 200],
+    vvelprs=[500],
 )
 data_shape = (41, 161, 13)
 

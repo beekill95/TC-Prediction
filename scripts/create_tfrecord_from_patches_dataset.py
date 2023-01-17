@@ -104,7 +104,11 @@ def extract_subset(ds: xr.Dataset, subset: OrderedDict) -> np.ndarray:
             if lev:
                 values = ds[key].values
         else:
-            values = ds[key].sel(lev=list(lev)).values
+            try:
+                values = ds[key].sel(lev=list(lev)).values
+            except Exception as e:
+                print(key, lev, ds[key]['lev'])
+                raise e
 
         if values is not None:
             if values.ndim == 2:
