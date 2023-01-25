@@ -6,7 +6,7 @@ import tensorflow as tf
 from ...data.tfd_utils import new_py_function
 
 
-class PatchesTFRecordDataLoader():
+class PatchesWithGenesisTFRecordDataLoader():
     def load_dataset(self, path: str, batch_size: int) -> tf.data.Dataset:
         ds = tf.data.TFRecordDataset(path)
         ds = ds.map(_parse_dataset)
@@ -17,12 +17,14 @@ class PatchesTFRecordDataLoader():
                     datashape=d['data_shape'],
                     position=d['position'],
                     filename=d['filename'],
+                    genesis=d['genesis'],
                 ),
                 [d],
-                Tout=[tf.float64, tf.float64, tf.string],
+                Tout=[tf.float64, tf.float64, tf.string, tf.int64],
                 name='parse_binary_dataset',
             ),
             num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.map(lambda d, _a, _b, g: (d, g)).cache()
 
         ds = ds.batch(batch_size)
         return ds.prefetch(tf.data.AUTOTUNE)
@@ -31,6 +33,7 @@ class PatchesTFRecordDataLoader():
 _patches_dataset_description = dict(
     data=tf.io.FixedLenFeature([], tf.string),
     data_shape=tf.io.RaggedFeature(dtype=tf.int64),
+    genesis=tf.io.RaggedFeature(dtype=tf.int64),
     position=tf.io.FixedLenFeature([], tf.string),
     filename=tf.io.FixedLenFeature([], tf.string),
 )
@@ -41,7 +44,7 @@ def _parse_dataset(example_proto):
     return results
 
 
-def _parse_binary_dataset(*, data, datashape, position, filename):
+def _parse_binary_dataset(*, data, datashape, position, filename, genesis):
     data = np.frombuffer(data.numpy(), dtype=np.float32).reshape(datashape.numpy())
     position = np.frombuffer(position.numpy(), dtype=np.float32)
-    return data, position, filename.numpy().decode('utf-8')
+    return data, position, filename.numpy().decode('utf-8'), genesis[0]

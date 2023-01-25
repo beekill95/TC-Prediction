@@ -56,6 +56,9 @@ def load_best_track(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     # We only care about some columns.
     df = df[['SID', 'Date', 'LAT', 'LON', 'BASIN']]
 
+    # Convert LON.
+    df['LON'] = df['LON'].apply(lambda l: l if l > 0 else 360 + l)
+
     # Group by SID, and only retain the first row.
     genesis_df = df.groupby('SID', sort=False).first()
     genesis_df = genesis_df.copy()

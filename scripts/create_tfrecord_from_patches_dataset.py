@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+try:
+    from .tfrecords_utils import *
+except ImportError:
+    from tfrecords_utils import *
+
 import argparse
 from collections import OrderedDict, namedtuple
 import glob
@@ -49,29 +54,13 @@ def parse_arguments(args=None):
     return parser.parse_args(args)
 
 
-def _bytes_feature(value):
-    """Returns a bytes_list from a string / byte."""
-    if isinstance(value, type(tf.constant(0))):
-        value = value.numpy()
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-
-def _int64_feature(values):
-  """Returns an int64_list from a bool / enum / int / uint."""
-  return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
-
-
-def _numpy_feature(value: np.ndarray):
-    value_bytes = value.tobytes()
-    return _bytes_feature(value_bytes)
-
 
 def _to_example(value: np.ndarray, pos: np.ndarray, path: str):
     feature = dict(
-        data=_numpy_feature(value),
-        data_shape=_int64_feature(value.shape),
-        position=_numpy_feature(pos),
-        filename=_bytes_feature(str.encode(path)),
+        data=numpy_feature(value),
+        data_shape=int64_feature(value.shape),
+        position=numpy_feature(pos),
+        filename=bytes_feature(str.encode(path)),
     )
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
