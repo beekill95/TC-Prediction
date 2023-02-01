@@ -483,4 +483,57 @@ print(len(true_positives), len(true_positives_with_genesis_location))
 count_cases_with_genesis_close_to_domain_edges(true_positives_with_genesis_location)
 plot_histogram_of_genesis_locations_wrt_domain_edges(true_positives_with_genesis_location)
 
+# Among these correctly classified samples,
+# does the model have a hard time making the prediction?
+#
+# If it does, then the prediction of the near edges cases should be near 0.5,
+# while the remaining cases should not.
+
+# +
+def plot_histogram_of_near_edges_prediction(pred_with_genesis_loc_df: pd.DataFrame, domain_size=30, threshold=5):
+    fig, axes = plt.subplots(ncols=2, figsize=(8, 4))
+
+    # TODO: should be enclosed in a function.
+    g_lat = pred_with_genesis_loc_df['Lat_storm']
+    g_lon = pred_with_genesis_loc_df['Lon_storm']
+    patch_loc = pred_with_genesis_loc_df['loc']
+
+    distance_from_left_edge = g_lon - patch_loc.apply(lambda l: l[1])
+    distance_from_right_edge = patch_loc.apply(lambda l: l[1] + domain_size) - g_lon
+    distance_from_top_edge = patch_loc.apply(lambda l: l[0] + domain_size) - g_lat
+    distance_from_bottom_edge = g_lat - patch_loc.apply(lambda l: l[0])
+
+    near_edges_mask = reduce(lambda acc, cur: acc | (cur < threshold), [
+        distance_from_left_edge,
+        distance_from_right_edge,
+        distance_from_bottom_edge,
+    ], distance_from_top_edge < threshold)
+
+
+    # Near edges predicted probability histogram.
+    ax = axes[0]
+    near_edges = pred_with_genesis_loc_df[near_edges_mask]
+    near_edges['pred'].hist(ax=ax)
+    ax.set_title('Near edges predicted probability histogram.')
+
+    # Non near edges predicted probability histogram.
+    ax = axes[1]
+    non_near_edges = pred_with_genesis_loc_df[~near_edges_mask]
+    non_near_edges['pred'].hist(ax=ax)
+    ax.set_title('Non Near edges predicted probability histogram.')
+
+    fig.tight_layout()
+
+
+plot_histogram_of_near_edges_prediction(true_positives_with_genesis_location)
+# -
+
+# Well, my hypothesis is not correct.
+# I want to know how important the genesis near edges is?
+# i.e. How many positive cases that has genesis near the edges?
+
+positive_cases = validation_predictions[validation_predictions['y'] == 1]
+positive_cases_with_genesis_location = find_genesis_location(positive_cases, ibtracs_df)
+count_cases_with_genesis_close_to_domain_edges(positive_cases_with_genesis_location)
+
 # ## Actions
