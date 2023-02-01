@@ -18,7 +18,7 @@
 # %load_ext autoreload
 # %autoreload 2
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -30,8 +30,8 @@ import xarray as xr
 
 
 # +
-val_path = 'data/ncep_WP_EP_6h_all_binary_patches_all_variables_remove_outside_grouped_Val.tfrecords'
-test_path = 'data/ncep_WP_EP_6h_all_binary_patches_all_variables_remove_outside_grouped_Test.tfrecords'
+val_path = 'data/ncep_WP_EP_6h_all_binary_patches_developed_storms_removed_Val.tfrecords'
+test_path = 'data/ncep_WP_EP_6h_all_binary_patches_developed_storms_removed_Test.tfrecords'
 
 dataloader = PatchesWithGenesisTFRecordDataLoader()
 val_patches_ds = dataloader.load_dataset(val_path, batch_size=256, for_analyzing=True)
@@ -84,7 +84,7 @@ class F1(tf.keras.metrics.Metric):
         self._recall.reset_state()
 
 
-path = 'saved_models/random_positive_f1_0.490'
+path = 'saved_models/random_positive_no_pca_developed_storms_removed_f1_0.608'
 model = tf.keras.models.load_model(path, compile=False)
 model.compile(
     optimizer='adam',
@@ -112,7 +112,6 @@ model.evaluate(test_patches_ds)
 # * Why negative samples are classified as True?
 # * Is there any systematic bias that the model is making?
 
-# +
 validation_predictions = []
 for X, y, filenames, patch_locations in tqdm(iter(val_patches_ds), desc='Predicting on Validation'):
     y_pred = model.predict(X, verbose=False)
@@ -120,11 +119,10 @@ for X, y, filenames, patch_locations in tqdm(iter(val_patches_ds), desc='Predict
         [dict(filename=filename.numpy().decode('utf-8'), loc=loc.numpy(), y=yi.numpy()[0], pred=yi_pred[0])
          for filename, loc, yi, yi_pred in zip(filenames, patch_locations, y, y_pred)])
 
-
+pd.set_option('display.max_colwidth', None)
 validation_predictions = pd.DataFrame(validation_predictions)
 validation_predictions['pred_label'] = validation_predictions['pred'].apply(lambda p: 1 if p > 0.5 else 0)
 validation_predictions.head()
-# -
 
 # ### False Positives
 #
@@ -242,6 +240,8 @@ false_positives_with_nearest_storm = find_nearest_storm_at_the_same_time(ibtracs
 false_positives_with_nearest_storm.head()
 # -
 
+false_positives_with_nearest_storm
+
 # OK, now we're ready to count in these false positive patches,
 # how many patches contain a storm in it.
 
@@ -271,6 +271,30 @@ print(
 false_positives_without_storm_in_domain = false_positives_with_nearest_storm[~false_positives_with_nearest_storm['is_storm_within_15_deg_radius']]
 false_positives_without_storm_in_domain.head(10)
 
+# In addition, I want to know the distribution of the predicted probability for these patches.
+
+# +
+def show_predicted_probability_historam_of_false_positives_with_and_without_developed_storms(false_positives_with_nearest_storm: pd.DataFrame):
+    fig, axes = plt.subplots(ncols=2, figsize=(8, 4), sharey=True)
+
+    # Histogram of the predicted probability with developed storms.
+    ax = axes[0]
+    with_storms = false_positives_with_nearest_storm[false_positives_with_nearest_storm['has_storm_in_domain']]
+    with_storms['pred'].hist(ax=ax)
+    ax.set_title('Histogram with developed storms')
+
+    # Histogram of the predicted probability without developed storms.
+    ax = axes[1]
+    without_storms = false_positives_with_nearest_storm[~false_positives_with_nearest_storm['has_storm_in_domain']]
+    without_storms['pred'].hist(ax=ax)
+    ax.set_title('Histogram without developed storms')
+
+    fig.tight_layout()
+
+
+show_predicted_probability_historam_of_false_positives_with_and_without_developed_storms(false_positives_with_nearest_storm)
+# -
+
 # #### Some False Positive Patches
 #
 # Is there anything common within these negative patches that cause the model to classify them as positive?
@@ -285,6 +309,7 @@ def plot_patch(row: pd.Series, patch_type: str, domain_size: int = 30):
         ('pressfc', None),
         ('ugrdprs', 800),
         ('vgrdprs', 800),
+        ('capesfc', None),
     ]
     nb_variables = len(variables_to_plot)
     fig, axes = plt.subplots(ncols=nb_variables, figsize=(4 * nb_variables, 4))
@@ -303,6 +328,12 @@ def plot_patch(row: pd.Series, patch_type: str, domain_size: int = 30):
 plot_patch(false_positives.iloc[0], 'False Positive')
 # -
 
+plot_patch(false_positives.iloc[1], 'False Positive')
+
+plot_patch(false_positives.iloc[2], 'False Positive')
+
+plot_patch(false_positives.iloc[50], 'False Positive')
+
 # ### False Negatives
 #
 # False negatives are positive samples but are classified as negative.
@@ -315,7 +346,9 @@ false_negatives.head()
 print('Number of file having false negatives:', len(false_negatives.groupby('filename')))
 show_location_histogram(false_negatives)
 
-# Do these negative patches even have developed storms in it?
+false_negatives['pred'].hist()
+
+# Do these false negative cases even have a developed storm in it?
 
 false_negatives_with_nearest_storm = find_nearest_storm_at_the_same_time(ibtracs_df, false_negatives)
 false_negatives_with_nearest_storm.head()
@@ -329,8 +362,125 @@ print(
     '\nThe ratio is:',
     nb_false_negatives_has_storm / len(false_negatives_with_nearest_storm))
 
-# ## Actions
+# For these false negative cases,
+# I want to know where the genesis location is.
+
+# +
+def find_genesis_location(pred_df: pd.DataFrame, ibtracs_df: pd.DataFrame, domain_size=30):
+    def filter_not_in_domain(row: pd.Series):
+        lat, lon = row['loc']
+        return (lat <= row['Lat_storm'] <= lat + domain_size) and (lon <= row['Lon_storm'] <= lon + domain_size)
+
+    pred_df['Date_file'] = pred_df['filename'].apply(parse_date_from_nc_filename)
+
+    # It's better to shrink our domain,
+    # since we know that we only detect storms in WP and EP.
+    ibtracs_df = ibtracs_df.groupby('SID').first()
+    ibtracs_df = ibtracs_df[ibtracs_df['BASIN'].isin(['WP', 'EP'])]
+    ibtracs_df['Date_storm_leadtime'] = ibtracs_df['Date_storm'].apply(lambda d: d - timedelta(hours=6))
+    # Cheated a bit.
+    lon_mask = (100 <= ibtracs_df['Lon_storm']) & (ibtracs_df['Lon_storm'] <= 260)
+    lat_mask = (5 <= ibtracs_df['Lat_storm']) & (ibtracs_df['Lat_storm'] <= 45)
+    ibtracs_df = ibtracs_df[lon_mask & lat_mask]
+
+    results = pred_df.merge(ibtracs_df, left_on='Date_file', right_on='Date_storm_leadtime')
+    results = results[results.apply(filter_not_in_domain, axis=1)]
+
+    return results
+
+false_negatives_with_genesis_location = find_genesis_location(false_negatives, ibtracs_df)
+print(len(false_negatives_with_genesis_location), len(false_negatives))
+false_negatives_with_genesis_location.head()
+
+# +
+def plot_histogram_of_genesis_locations_wrt_domain_edges(pred_with_genesis_loc_df: pd.DataFrame, domain_size=30):
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(8, 8))
+
+    g_lat = pred_with_genesis_loc_df['Lat_storm']
+    g_lon = pred_with_genesis_loc_df['Lon_storm']
+    patch_loc = pred_with_genesis_loc_df['loc']
+
+    # Genesis distance from left edge.
+    ax = axes[0, 0]
+    distance_from_left_edge = g_lon - patch_loc.apply(lambda l: l[1])
+    distance_from_left_edge.hist(ax=ax, bins=domain_size)
+    ax.set_title('Genesis distance from left edge')
+    print('Number of cases with distance from left edge < 5deg:', (distance_from_left_edge < 5).sum())
+
+    # Genesis distance from right edge.
+    ax = axes[0, 1]
+    distance_from_right_edge = patch_loc.apply(lambda l: l[1] + domain_size) - g_lon
+    distance_from_right_edge.hist(ax=ax, bins=domain_size)
+    ax.set_title('Genesis distance from right edge')
+    print('Number of cases with distance from right edge < 5deg:', (distance_from_right_edge < 5).sum())
+
+    # Genesis distance from top edge.
+    ax = axes[1, 0]
+    distance_from_top_edge = patch_loc.apply(lambda l: l[0] + domain_size) - g_lat
+    distance_from_top_edge.hist(ax=ax, bins=domain_size)
+    ax.set_title('Genesis distance from top edge')
+
+    # Genesis distance from bottom edge.
+    ax = axes[1, 1]
+    distance_from_bottom_edge = g_lat - patch_loc.apply(lambda l: l[0])
+    distance_from_bottom_edge.hist(ax=ax, bins=domain_size)
+    ax.set_title('Genesis distance from bottom edge')
+    print('Number of cases with distance from bottom edge < 5deg:', (distance_from_bottom_edge < 5).sum())
+
+    fig.tight_layout()
+
+
+plot_histogram_of_genesis_locations_wrt_domain_edges(false_negatives_with_genesis_location)
+# -
+
+# So in actual, how many false negative cases with genesis that are too close the domain edges?
+
+# +
+from functools import reduce # noqa
+
+
+def count_cases_with_genesis_close_to_domain_edges(pred_with_genesis_loc_df: pd.DataFrame, domain_size=30, threshold=5):
+    g_lat = pred_with_genesis_loc_df['Lat_storm']
+    g_lon = pred_with_genesis_loc_df['Lon_storm']
+    patch_loc = pred_with_genesis_loc_df['loc']
+
+    distance_from_left_edge = g_lon - patch_loc.apply(lambda l: l[1])
+    distance_from_right_edge = patch_loc.apply(lambda l: l[1] + domain_size) - g_lon
+    distance_from_top_edge = patch_loc.apply(lambda l: l[0] + domain_size) - g_lat
+    distance_from_bottom_edge = g_lat - patch_loc.apply(lambda l: l[0])
+
+    near_edges = reduce(lambda acc, cur: acc | (cur < threshold), [
+        distance_from_left_edge,
+        distance_from_right_edge,
+        distance_from_bottom_edge,
+    ], distance_from_top_edge < threshold)
+    nb_cases = near_edges.sum()
+
+    print('Number of cases near edges:', nb_cases,
+          '\nOver total number of cases:', len(pred_with_genesis_loc_df),
+          '\nRatio:', nb_cases / len(pred_with_genesis_loc_df))
+
+
+count_cases_with_genesis_close_to_domain_edges(false_negatives_with_genesis_location)
+# -
+
+# But wait, is this the same as in the correct cases?
+# So my hypothesis is that: because the genesis events are too close to the edges,
+# the model is having a hard time detecting genesis event.
 #
-# * From looking at the number of false positive patches,
-# we can apply filtering method to remove developed storms.
-# It can potentially reduce the number of false positives by 50%.
+# Thus, the null hypothesis must be true right?
+# The null hypothesis is that: the model will easily detect genesis events if the
+# genesis is near the middle of the patch.
+#
+# Therefore, the expectation is that:
+# when we calculate the number correctly classified genesis events,
+# the ratio of near edges must be low.
+
+mask = (validation_predictions['y'] == 1) & (validation_predictions['pred_label'] == 1)
+true_positives = validation_predictions[mask]
+true_positives_with_genesis_location = find_genesis_location(true_positives, ibtracs_df)
+print(len(true_positives), len(true_positives_with_genesis_location))
+count_cases_with_genesis_close_to_domain_edges(true_positives_with_genesis_location)
+plot_histogram_of_genesis_locations_wrt_domain_edges(true_positives_with_genesis_location)
+
+# ## Actions

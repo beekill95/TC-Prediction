@@ -30,8 +30,8 @@ import xarray as xr
 
 
 # +
-val_path = 'data/ncep_WP_EP_6h_all_binary_patches_all_variables_remove_outside_grouped_Val.tfrecords'
-test_path = 'data/ncep_WP_EP_6h_all_binary_patches_all_variables_remove_outside_grouped_Test.tfrecords'
+val_path = 'data/ncep_WP_EP_6h_all_binary_patches_developed_storms_removed_Val.tfrecords'
+test_path = 'data/ncep_WP_EP_6h_all_binary_patches_developed_storms_removed_Test.tfrecords'
 
 dataloader = PatchesWithGenesisTFRecordDataLoader()
 val_patches_ds = dataloader.load_dataset(val_path, batch_size=256, for_analyzing=True)
@@ -84,7 +84,7 @@ class F1(tf.keras.metrics.Metric):
         self._recall.reset_state()
 
 
-path = 'saved_models/random_positive_f1_0.490'
+path = 'saved_models/random_positive_developed_storms_removed_f1_0.599'
 model = tf.keras.models.load_model(path, compile=False)
 model.compile(
     optimizer='adam',
@@ -271,6 +271,30 @@ print(
 false_positives_without_storm_in_domain = false_positives_with_nearest_storm[~false_positives_with_nearest_storm['is_storm_within_15_deg_radius']]
 false_positives_without_storm_in_domain.head(10)
 
+# +
+def show_predicted_probability_historam_of_false_positives_with_and_without_developed_storms(false_positives_with_nearest_storm: pd.DataFrame):
+    fig, axes = plt.subplots(ncols=2, figsize=(8, 4), sharey=True)
+
+    # Histogram of the predicted probability with developed storms.
+    ax = axes[0]
+    with_storms = false_positives_with_nearest_storm[false_positives_with_nearest_storm['has_storm_in_domain']]
+    with_storms['pred'].hist(ax=ax)
+    ax.set_title('Histogram with developed storms')
+
+    # Histogram of the predicted probability without developed storms.
+    ax = axes[1]
+    without_storms = false_positives_with_nearest_storm[~false_positives_with_nearest_storm['has_storm_in_domain']]
+    without_storms['pred'].hist(ax=ax)
+    ax.set_title('Histogram without developed storms')
+
+    fig.tight_layout()
+
+
+show_predicted_probability_historam_of_false_positives_with_and_without_developed_storms(false_positives_with_nearest_storm)
+
+
+# -
+
 # #### Some False Positive Patches
 #
 # Is there anything common within these negative patches that cause the model to classify them as positive?
@@ -315,22 +339,6 @@ false_negatives.head()
 print('Number of file having false negatives:', len(false_negatives.groupby('filename')))
 show_location_histogram(false_negatives)
 
-# Do these negative patches even have developed storms in it?
-
-false_negatives_with_nearest_storm = find_nearest_storm_at_the_same_time(ibtracs_df, false_negatives)
-false_negatives_with_nearest_storm.head()
-
-nb_false_negatives_has_storm = false_negatives_with_nearest_storm['has_storm_in_domain'].sum()
-print(
-    'Number of false negative patches has a storm in it:',
-    nb_false_negatives_has_storm,
-    '\nAnd the number of false negative patches is:',
-    len(false_negatives_with_nearest_storm),
-    '\nThe ratio is:',
-    nb_false_negatives_has_storm / len(false_negatives_with_nearest_storm))
+false_negatives['pred'].hist()
 
 # ## Actions
-#
-# * From looking at the number of false positive patches,
-# we can apply filtering method to remove developed storms.
-# It can potentially reduce the number of false positives by 50%.

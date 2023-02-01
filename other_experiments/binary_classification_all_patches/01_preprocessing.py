@@ -1,3 +1,4 @@
+import argparse
 import pickle
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import IncrementalPCA
@@ -8,6 +9,26 @@ from tqdm import tqdm
 
 DATA_PATH = 'data/ncep_WP_EP_6h_all_Train.tfrecords'
 N_COMPONENTS = 20
+
+
+def parse_arguments(args=None):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        'inpath',
+        default=DATA_PATH,
+        help='Path to .tfrecords training dataset.')
+    parser.add_argument(
+        'nb_pca',
+        default=N_COMPONENTS,
+        type=int,
+        help='Number of PCA components.')
+    parser.add_argument(
+        '--suffix',
+        default='',
+        help='Suffix to be added to output files.')
+
+    return parser.parse_args(args)
 
 
 def extract_reshape_data_to_2d_matrix(data, *args):
@@ -25,8 +46,11 @@ def pickle_dump(obj, filename):
         pickle.dump(obj, obj_out, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def main():
-    ds = FullDomainTFRecordsDataLoader(datashape=(41, 161, 136)).load_dataset(DATA_PATH)
+def main(args=None):
+    args = parse_arguments(args)
+
+    ds = FullDomainTFRecordsDataLoader(
+        datashape=(41, 161, 136)).load_dataset(args.inpath)
     ds = ds.map(extract_reshape_data_to_2d_matrix)
 
     # First, fit standard scaler.
@@ -35,14 +59,15 @@ def main():
         scaler.partial_fit(data)
 
     # Next, scale data using standard scaler, and then fit PCA.
-    pca = IncrementalPCA(N_COMPONENTS)
+    pca = IncrementalPCA(args.nb_pca)
     for data in tqdm(iter(ds), desc='PCA'):
         data = scaler.transform(data)
         pca.partial_fit(data)
 
     # Finally, save these objects.
-    pickle_dump(scaler, 'scaler.pkl')
-    pickle_dump(pca, 'pca.pkl')
+    suffix = args.suffix
+    pickle_dump(scaler, f'scaler{suffix}.pkl')
+    pickle_dump(pca, f'pca{suffix}.pkl')
 
 
 if __name__ == '__main__':
