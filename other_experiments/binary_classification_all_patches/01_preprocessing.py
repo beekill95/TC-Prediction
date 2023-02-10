@@ -19,7 +19,8 @@ def parse_arguments(args=None):
         default=DATA_PATH,
         help='Path to .tfrecords training dataset.')
     parser.add_argument(
-        'nb_pca',
+        '--nb-pca',
+        dest='nb_pca',
         default=N_COMPONENTS,
         type=int,
         help='Number of PCA components.')
