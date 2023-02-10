@@ -346,3 +346,31 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
                 raise e
             else:
                 print(f'Ignore generating negative patch for file {row["Path"]}.')
+
+
+VARIABLES_ORDER = [
+    'absvprs',
+    'capesfc',
+    'hgtprs',
+    'pressfc',
+    'rhprs',
+    'tmpprs',
+    'tmpsfc',
+    'ugrdprs',
+    'vgrdprs',
+    'vvelprs',
+]
+def extract_all_variables(ds: xr.Dataset, order: list[str]):
+    values = []
+
+    for varname in order:
+        var = ds[varname].values
+        if var.ndim == 2:
+            var = var[None, ...]
+
+        values.append(var)
+
+    values = np.concatenate(values, axis=0)
+    values = np.moveaxis(values, 0, 2)
+    return values
+

@@ -76,6 +76,12 @@ def parse_args(args=None):
         help='Number of parallel processes. Default to 8.'
     )
     parser.add_argument(
+        '--all-variables',
+        dest='all_variables',
+        action='store_true',
+        help='Whether should we extract all variables or not. Default is False, which means only a subset is extracted.'
+    )
+    parser.add_argument(
         '--domain-size',
         dest='domain_size',
         default=30,
@@ -138,9 +144,9 @@ def to_example(value: np.ndarray, pos: np.ndarray, genesis: bool, path: str):
     )
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
-ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'stride'])
+ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'stride', 'all_variables'])
 def extract_dataset_samples(args: ProcessArgs) -> list[str]:
-    row, domain_size, stride = args
+    row, domain_size, stride, all_variables = args
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
     lat, lon = ds['lat'].values, ds['lon'].values
     latmin, latmax = lat.min(), lat.max()
@@ -157,10 +163,18 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
             if g_lat is None:
                 genesis = False
             else:
-                genesis = (lt < g_lat < lt + domain_size) and (ln < g_lon < ln + domain_size)
+                if not isinstance(g_lat, list):
+                    g_lat = [g_lat]
+                    g_lon = [g_lon]
+
+                genesis = any(
+                    (lt < glt < lt + domain_size) and (ln < gln < ln + domain_size)
+                    for glt, gln in zip(g_lat, g_lon))
 
             patch = ds.sel(lat=slice(lt, lt + domain_size), lon=slice(ln, ln + domain_size))
-            patch = extract_subset(patch, SUBSET)
+            patch = (extract_subset(patch, SUBSET)
+                     if not all_variables
+                     else extract_all_variables(patch, VARIABLES_ORDER))
             patch_example = to_example(
                 patch, np.asarray([lt, ln]), genesis, row['Path'])
             results.append(patch_example.SerializeToString())
@@ -170,11 +184,11 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
 
 def extract_dataset_samples_parallel(
         genesis_df: pd.DataFrame, outputfile: str, *,
-        domain_size: float, stride: float, processes: int, desc: str):
+        domain_size: float, stride: float, processes: int, desc: str, all_variables: bool):
     with Pool(processes) as pool:
         tasks = pool.imap_unordered(
             extract_dataset_samples, 
-            (ProcessArgs(r, domain_size, stride) for _, r in genesis_df.iterrows()))
+            (ProcessArgs(r, domain_size, stride, all_variables) for _, r in genesis_df.iterrows()))
 
         with tf.io.TFRecordWriter(outputfile) as writer:
             for results in tqdm(tasks, total=len(genesis_df), desc=desc):
@@ -189,10 +203,6 @@ def main(args=None):
 
     files = list_reanalysis_files(args.ncep_fnl)
     genesis_df, _ = load_best_track(args.best_track)
-
-    # Filter out basins.
-    # storms_df = storms_df[storms_df['BASIN'].isin(args.basin)]
-    genesis_df = genesis_df[genesis_df['BASIN'].isin(args.basin)]
 
     # Remove storms that are outside the domain of interest.
     ds = xr.load_dataset(files['Path'].iloc[0], engine='netcdf4')
@@ -210,7 +220,15 @@ def main(args=None):
     files['Date'] = files['Date'].apply(
         lambda date: date + timedelta(hours=args.leadtime))
     genesis_df = files.merge(genesis_df, how='inner', on='Date')
-
+    genesis_df = genesis_df.groupby('Path').agg({
+        'OriginalDate': 'first',
+        'LAT': lambda x: x.iloc[0] if len(x) == 1 else list(x),
+        'LON': lambda x: x.iloc[0] if len(x) == 1 else list(x),
+        'BASIN': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+        'SID': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+        'Date': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+    })
+    genesis_df['Path'] = genesis_df.index
 
     # Split into train, validation, and test datasets.
     dates = genesis_df['OriginalDate']
@@ -239,7 +257,8 @@ def main(args=None):
         extract_dataset_samples_parallel(
             df, path,
             domain_size=args.domain_size, stride=args.stride,
-            processes=args.processes, desc=desc)
+            processes=args.processes, desc=desc,
+            all_variables=args.all_variables)
 
 
 if __name__ == '__main__':

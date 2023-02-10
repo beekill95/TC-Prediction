@@ -36,18 +36,6 @@ from tqdm import tqdm
 import xarray as xr
 
 
-VARIABLES_ORDER = [
-    'absvprs',
-    'capesfc',
-    'hgtprs',
-    'pressfc',
-    'rhprs',
-    'tmpprs',
-    'tmpsfc',
-    'ugrdprs',
-    'vgrdprs',
-    'vvelprs',
-]
 TRAIN_DATE_END = datetime(2016, 1, 1)
 VAL_DATE_END = datetime(2018, 1, 1)
 
@@ -118,21 +106,6 @@ def list_reanalysis_files(path: str) -> pd.DataFrame:
     })
 
 
-def extract_values(ds: xr.Dataset, order: list[str]):
-    values = []
-
-    for varname in order:
-        var = ds[varname].values
-        if var.ndim == 2:
-            var = var[None, ...]
-
-        values.append(var)
-
-    values = np.concatenate(values, axis=0)
-    values = np.moveaxis(values, 0, 2)
-    return values
-
-
 def to_example(value: np.ndarray, pos: np.ndarray, genesis: bool, path: str):
     feature = dict(
         data=numpy_feature(value, dtype=np.float32),
@@ -163,10 +136,16 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
             if g_lat is None:
                 genesis = False
             else:
-                genesis = (lt < g_lat < lt + domain_size) and (ln < g_lon < ln + domain_size)
+                if not isinstance(g_lat, list):
+                    g_lat = [g_lat]
+                    g_lon = [g_lon]
+
+                genesis = any(
+                    (lt < glt < lt + domain_size) and (ln < gln < ln + domain_size)
+                    for glt, gln in zip(g_lat, g_lon))
 
             patch = ds.sel(lat=slice(lt, lt + domain_size), lon=slice(ln, ln + domain_size))
-            patch = extract_values(patch, VARIABLES_ORDER)
+            patch = extract_all_variables(patch, VARIABLES_ORDER)
 
             # Reshape patch so that we can perform PCA.
             patch_original_shape = patch.shape
@@ -200,7 +179,7 @@ def extract_dataset_samples_parallel(
 
 def load_path(path: str):
     ds = xr.load_dataset(path, engine='netcdf4')
-    values = extract_values(ds, VARIABLES_ORDER)
+    values = extract_all_variables(ds, VARIABLES_ORDER)
     nb_variables = values.shape[-1]
     return values.reshape(-1, nb_variables)
 
@@ -234,7 +213,6 @@ def standard_scaler(genesis_df: pd.DataFrame):
 
 def main(args=None):
     args = parse_args(args)
-    
     outfile = args.outfile
 
     files = list_reanalysis_files(args.ncep_fnl)
@@ -260,6 +238,15 @@ def main(args=None):
     files['Date'] = files['Date'].apply(
         lambda date: date + timedelta(hours=args.leadtime))
     genesis_df = files.merge(genesis_df, how='inner', on='Date')
+    genesis_df = genesis_df.groupby('Path').agg({
+        'OriginalDate': 'first',
+        'LAT': lambda x: x.iloc[0] if len(x) == 1 else list(x),
+        'LON': lambda x: x.iloc[0] if len(x) == 1 else list(x),
+        'BASIN': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+        'SID': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+        'Date': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
+    })
+    genesis_df['Path'] = genesis_df.index
 
     # Split into train, validation, and test datasets.
     dates = genesis_df['OriginalDate']

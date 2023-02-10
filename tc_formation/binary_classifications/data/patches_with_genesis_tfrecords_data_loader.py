@@ -7,7 +7,7 @@ from ...data.tfd_utils import new_py_function
 
 
 class PatchesWithGenesisTFRecordDataLoader():
-    def load_dataset(self, path: str, batch_size: int, shuffle: bool = False) -> tf.data.Dataset:
+    def load_dataset(self, path: str, batch_size: int, shuffle: bool = False, for_analyzing: bool = False) -> tf.data.Dataset:
         ds = tf.data.TFRecordDataset(path)
         ds = ds.map(_parse_dataset)
         ds = ds.map(
@@ -24,7 +24,7 @@ class PatchesWithGenesisTFRecordDataLoader():
                 name='parse_binary_dataset',
             ),
             num_parallel_calls=tf.data.AUTOTUNE)
-        ds = ds.map(lambda d, _a, _b, g: (d, [g]))
+        ds = ds.map(self.select(for_analyzing))
         ds = ds.cache()
         
         if shuffle:
@@ -33,6 +33,15 @@ class PatchesWithGenesisTFRecordDataLoader():
         if batch_size > 0:
             ds = ds.batch(batch_size)
         return ds.prefetch(tf.data.AUTOTUNE)
+
+    def select(self, for_analyzing: bool = False):
+        def _select(data, patch_position, filename, genesis):
+            if for_analyzing:
+                return data, [genesis], filename, patch_position
+
+            return data, [genesis]
+
+        return _select
 
 
 _patches_dataset_description = dict(

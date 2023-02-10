@@ -29,6 +29,7 @@ class FullDomainTFRecordsDataLoader():
                 name='parse_binary_dataset',
             ),
             num_parallel_calls=tf.data.AUTOTUNE)
+
         # Tensorflow doesn't know the shape of the output data :(((
         ds = ds.map(_set_data_shape(self._datashape))
         ds = ds.cache()
