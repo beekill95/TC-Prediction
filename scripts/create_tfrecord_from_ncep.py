@@ -15,6 +15,7 @@ except ImportError:
 
 
 import argparse
+from collections import namedtuple
 from datetime import datetime, timedelta
 import glob
 from multiprocessing import Pool
@@ -62,6 +63,12 @@ def parse_args(args=None):
         help='Number of parallel processes. Default to 8.'
     )
     parser.add_argument(
+        '--no-capesfc',
+        dest='no_capesfc',
+        action='store_true',
+        help='Whether should we include capesfc (to be compatible with future projection data.)'
+    )
+    parser.add_argument(
         '--include-non-genesis',
         dest='include_non_genesis',
         action='store_true',
@@ -97,10 +104,15 @@ def to_example(value: np.ndarray, *, genesis_locations: np.ndarray, genesis_date
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
 
-def convert_nc_file_to_tfrecord(row: pd.Series):
+ProcessArgs = namedtuple('ProcessArgs', ['row', 'no_capesfc'])
+def convert_nc_file_to_tfrecord(args: ProcessArgs):
+    row, no_capesfc = args
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
     latmin, lonmin = ds['lat'].values.min(), ds['lon'].values.min()
-    values = extract_all_variables(ds, VARIABLES_ORDER)
+    variables_order = list(VARIABLES_ORDER)
+    if no_capesfc:
+        variables_order.remove('capesfc')
+    values = extract_all_variables(ds, variables_order)
 
     genesis_locations = [(lat, lon) for lat, lon in zip(row['LAT'], row['LON'])]
     example = to_example(
@@ -155,7 +167,7 @@ def main(args=None):
     with Pool(args.processes) as pool:
         tasks = pool.imap_unordered(
             convert_nc_file_to_tfrecord,
-            [row for _, row in genesis_df.iterrows()])
+            [ProcessArgs(row, args.no_capesfc) for _, row in genesis_df.iterrows()])
 
         assert not os.path.isfile(outfile), f'Output file exists! {outfile=}'
         with tf.io.TFRecordWriter(outfile) as writer:
