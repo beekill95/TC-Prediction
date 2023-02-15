@@ -116,7 +116,7 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
             storms_in_year[['SID', 'Date', 'LAT', 'LON']])
 
     storms_df = pd.concat(storms).sort_values('Date')
-    print(storms_df[storms_df['Date'] == datetime(1989, 7, 7, 0, 0)])
+    # print(storms_df[storms_df['Date'] == datetime(1989, 7, 7, 0, 0)])
 
     genesis_df = storms_df.groupby('SID').first().copy()
     genesis_df['SID'] = genesis_df.index
@@ -348,6 +348,16 @@ class PositiveAndNegativePatchesExtractor(abc.ABC):
                 print(f'Ignore generating negative patch for file {row["Path"]}.')
 
 
+def list_reanalysis_files(path: str) -> pd.DataFrame:
+    files = glob.iglob(os.path.join(path, '*.nc'))
+    files = ((parse_date_from_nc_filename(f), f) for f in files)
+    dates, filepaths = zip(*files)
+    return pd.DataFrame({
+        'Date': dates,
+        'Path': filepaths,
+    })
+
+
 VARIABLES_ORDER = [
     'absvprs',
     'capesfc',
@@ -374,3 +384,27 @@ def extract_all_variables(ds: xr.Dataset, order: list[str]):
     values = np.moveaxis(values, 0, 2)
     return values
 
+
+def extract_subset(ds: xr.Dataset, subset: OrderedDict) -> np.ndarray:
+    tensors = []
+    for key, lev in subset.items():
+        values = None
+        if isinstance(lev, bool):
+            if lev:
+                values = ds[key].values
+        else:
+            try:
+                values = ds[key].sel(lev=list(lev)).values
+            except Exception as e:
+                print(key, lev, ds[key]['lev'])
+                raise e
+
+        if values is not None:
+            if values.ndim == 2:
+                values = values[None, ...]
+
+            tensors.append(values)
+
+    tensors = np.concatenate(tensors, axis=0)
+    tensors = np.moveaxis(tensors, 0, -1)
+    return tensors

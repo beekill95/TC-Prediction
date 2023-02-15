@@ -182,7 +182,6 @@ def _obtain_analyzed_vortex_field_1(disturbance_field: np.ndarray) -> np.ndarray
     else:
         has_2_dim = False
 
-
     kernel = gauss_kernel(disturbance_field, var=16)
     # print('kernel', kernel[..., 0])
     analyzed_vortex = disturbance_field * kernel
