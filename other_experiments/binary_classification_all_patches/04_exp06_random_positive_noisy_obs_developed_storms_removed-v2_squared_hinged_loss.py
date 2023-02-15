@@ -61,9 +61,12 @@ def set_shape(shape, batch=True):
     return _set_shape
 
 
+def convert_y(X, y):
+    return X, tf.where(y == 0, -1, 1)
+
 train_fixed_patches_ds = train_fixed_patches_ds.map(set_shape(input_shape, False))
-val_patches_ds = val_patches_ds.map(set_shape(input_shape))
-test_patches_ds = test_patches_ds.map(set_shape(input_shape))
+val_patches_ds = val_patches_ds.map(set_shape(input_shape)).map(convert_y)
+test_patches_ds = test_patches_ds.map(set_shape(input_shape)).map(convert_y)
 
 # +
 # Load positive patch dataset.
@@ -77,7 +80,7 @@ train_random_positive_patches_ds = random_positive_patch_dataloader.load_dataset
 train_patches_ds = tf.data.Dataset.sample_from_datasets(
     [train_random_positive_patches_ds, train_fixed_patches_ds],
     weights=[0.5, 0.5],
-    stop_on_empty_dataset=False)
+    stop_on_empty_dataset=False).map(convert_y)
 train_patches_ds = train_patches_ds.batch(256)
 # -
 
@@ -114,6 +117,7 @@ class F1(tf.keras.metrics.Metric):
     
     def update_state(self, y_true, y_pred, sample_weight=None):
         y_pred = tf.where(y_pred > self._thresholds, 1., 0.)
+        y_true = tf.where(y_true == -1, 0, 1)
         self._precision.update_state(y_true, y_pred, sample_weight)
         self._recall.update_state(y_true, y_pred, sample_weight)
     
@@ -158,12 +162,12 @@ model = keras.Sequential([
     layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.LayerNormalization(axis=-1),
     layers.Dropout(0.5),
-    layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-3)),
-    layers.Activation('tanh'),
+    layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-4)),
+    # layers.Activation('tanh'),
 ])
 model.compile(
     optimizer='adam',
-    loss=tf.keras.losses.SquaredHinge(),
+    loss=tf.keras.losses.Hinge(),
     metrics=[
         'binary_accuracy',
         # tf.keras.metrics.Precision(thresholds=0),

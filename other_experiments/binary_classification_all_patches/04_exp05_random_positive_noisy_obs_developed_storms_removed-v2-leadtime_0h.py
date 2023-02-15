@@ -67,7 +67,7 @@ test_patches_ds = test_patches_ds.map(set_shape(input_shape))
 
 # +
 # Load positive patch dataset.
-train_random_positive_path = 'data/ncep_WP_EP_6h_full_domain_developed_storms_removed_v2_Train.tfrecords'
+train_random_positive_path = 'data/ncep_WP_EP_0h_full_domain_developed_storms_removed_v2_Train.tfrecords'
 random_positive_patch_dataloader = RandomPositivePatchesDataLoader(
     datashape=(41, 161, 136),
     domain_size=31)
@@ -75,7 +75,8 @@ train_random_positive_patches_ds = random_positive_patch_dataloader.load_dataset
 
 # Merge positive and negative datasets to form our train dataset.
 train_patches_ds = tf.data.Dataset.sample_from_datasets(
-    [train_random_positive_patches_ds, train_fixed_patches_ds],
+    [train_random_positive_patches_ds.repeat(1),
+     train_fixed_patches_ds],
     weights=[0.5, 0.5],
     stop_on_empty_dataset=False)
 train_patches_ds = train_patches_ds.batch(256)
@@ -150,9 +151,11 @@ model = keras.Sequential([
         512, 3,
         activation='relu',
         kernel_regularizer=keras.regularizers.L2(1e-3)),
-    layers.LayerNormalization(axis=-1),
+    # layers.LayerNormalization(axis=-1),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
+    layers.Dropout(0.5),
+    layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Dropout(0.5),
     layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Dropout(0.5),
@@ -192,3 +195,97 @@ metrics = model.evaluate(test_patches_ds)
 metrics
 
 model.save(f'saved_models/random_positive_no_pca_developed_storms_removed_v2_leadtime_0h_f1_{metrics[-1]:.3f}')
+
+# ## Feature Maps Visualization
+
+# +
+from sklearn.manifold import TSNE # noqa
+import seaborn as sns # noqa
+import pandas as pd # noqa
+import matplotlib.pyplot as plt # noqa
+
+feature_map = keras.Model(
+    inputs=model.inputs,
+    outputs=model.get_layer(name='flatten').output,
+)
+
+def obtain_embedding(patches_ds):
+    embeddings = []
+    labels = []
+    preds = []
+
+    for X, y in iter(patches_ds):
+        X_emb = feature_map(X)
+        y_pred = np.where(model(X).numpy() < 0.5, 0, 1)
+        # print(y_pred[:5], y_pred.shape)
+
+        embeddings.append(X_emb)
+        labels.append(y)
+        preds.append(y_pred)
+
+    embeddings, labels, preds = tuple(
+        np.concatenate(x, axis=0)
+        for x in [embeddings, labels, preds])
+    return pd.DataFrame({
+        'embedding': list(embeddings),
+        'y': labels[:, 0],
+        'y_pred': preds[:, 0],
+    })
+
+
+def perform_tsne(df):
+    tsne = TSNE()
+    embedding = np.asarray([x.tolist() for x in df['embedding'].tolist()])
+    embedding_2 = tsne.fit_transform(embedding)
+
+    df = df.copy()
+    df['f1'] = embedding_2[:, 0]
+    df['f2'] = embedding_2[:, 1]
+    # df[['f1', 'f2']] = embedding_2[:, 0], embedding_2[:, 1]
+    return df
+
+
+# Now, we will apply the encoder to the validation set
+# and visualize the embedding vectors with tSNE.
+val_embedding_df = obtain_embedding(val_patches_ds)
+df = perform_tsne(val_embedding_df)
+# -
+
+fig, axes = plt.subplots(ncols=2, figsize=(12, 6))
+sns.scatterplot(df, x='f1', y='f2', hue='y', style='y', ax=axes[0])
+sns.scatterplot(df, x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[1])
+
+# Now, we can check the feature of both training and validation.
+train_embedding_df = obtain_embedding(train_patches_ds)
+train_embedding_df['type'] = 'train'
+val_embedding_df['type'] = 'val'
+embedding_df = pd.concat([train_embedding_df, val_embedding_df])
+df = perform_tsne(embedding_df)
+
+# df['type y'] = df.apply(lambda r: f"{r['type']}-{r['y']}", axis=1)
+# df['type y pred'] = df.apply(lambda r: f"{r['type']}-{r['y_pred']}", axis=1)
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 12), sharex=True, sharey=True)
+sns.scatterplot(
+    df[df['type'] == 'train'], x='f1', y='f2', hue='y', style='y', ax=axes[0, 0])
+sns.scatterplot(
+    df[df['type'] == 'train'], x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[0, 1])
+sns.scatterplot(
+    df[df['type'] == 'val'], x='f1', y='f2', hue='y', style='y', ax=axes[1, 0])
+sns.scatterplot(
+    df[df['type'] == 'val'], x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[1, 1])
+
+sns.scatterplot(
+    df[(df['type'] == 'val') & (df['y'] == 1)], x='f1', y='f2', hue='y', style='y')
+plt.title('Genesis cases in validation data')
+
+sns.scatterplot(
+    df[(df['type'] == 'val') & (df['y'] == 0)], x='f1', y='f2', hue='y', style='y')
+plt.title('Non-genesis cases in validation data')
+
+sns.scatterplot(
+    df[(df['type'] == 'train') & (df['y'] == 1)], x='f1', y='f2', hue='y', style='y')
+plt.title('Genesis cases in training data')
+
+sns.scatterplot(
+    df[(df['type'] == 'train') & (df['y'] == 0)], x='f1', y='f2', hue='y', style='y')
+plt.title('Non-genesis cases in training data')
