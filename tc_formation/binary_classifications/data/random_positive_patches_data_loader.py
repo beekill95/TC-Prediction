@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 import tensorflow as tf
+import logging
 
 from .full_domain_tfrecords_data_loader import FullDomainTFRecordsDataLoader
+
+
+logger = logging.getLogger(__name__)
 
 
 class RandomPositivePatchesDataLoader(FullDomainTFRecordsDataLoader):
@@ -22,11 +26,10 @@ class RandomPositivePatchesDataLoader(FullDomainTFRecordsDataLoader):
 
         return ds
 
-    def autocrop_and_label(self, d, locations, *args):
+    def autocrop_and_label(self, d, locations, *_):
         return tf.numpy_function(
-            lambda data, locations: (
+            lambda data, locations:
                 autocrop_around_genesis_locations(data, locations, self._domain_size, self._margin),
-                [1]),
             inp=[d, locations],
             Tout=[tf.float64, tf.int64],
             name='autocrop_and_label')
@@ -40,7 +43,6 @@ class RandomPositivePatchesDataLoader(FullDomainTFRecordsDataLoader):
 
 def autocrop_around_genesis_locations(data: np.ndarray, genesis_locations: np.ndarray, domain_size: int, margin: int):
     # First, randomly choose one genesis location for generating positive patch.
-    # loc is [lat, lon]
     nb_genesis = genesis_locations.shape[0]
     if nb_genesis == 1:
         loc = genesis_locations[0]
@@ -53,12 +55,14 @@ def autocrop_around_genesis_locations(data: np.ndarray, genesis_locations: np.nd
     data_shape = data.shape
     valid_x = find_valid_pixel_range(loc[0], lower=0, upper=data_shape[0], size=domain_size, margin=margin)
     valid_y = find_valid_pixel_range(loc[1], lower=0, upper=data_shape[1], size=domain_size, margin=margin)
-    # print(f'{loc=}, {valid_x=}, {valid_y=}, {data_shape=}')
 
     # Finally, choose a random x and y.
-    x, y = tuple(np.random.choice(r) for r in (valid_x, valid_y))
-
-    return data[x:x+domain_size, y:y+domain_size].astype(np.float64)
+    try:
+        x, y = tuple(np.random.choice(r) for r in (valid_x, valid_y))
+        return data[x:x+domain_size, y:y+domain_size].astype(np.float64), [1]
+    except ValueError:
+        logger.warning('Couldnt find a valid random positive patch, so a default negative patch is returned instead.')
+        return data[:domain_size, :domain_size].astype(np.float64), [0]
 
 
 def find_valid_pixel_range(loc: int, *, lower: int, upper: int, size: int, margin: int = 5) -> np.ndarray:

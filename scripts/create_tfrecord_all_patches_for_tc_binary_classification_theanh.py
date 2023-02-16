@@ -119,14 +119,30 @@ def downscale_ds_to_1deg_resolution(ds: xr.Dataset) -> xr.Dataset:
     return ds.interp(
         lat=np.arange(latmin, latmax + 1),
         lon=np.arange(lonmin, lonmax + 1),
-        method='linear')
+        method='linear',
+        kwargs={"fill_value": "extrapolate"},)
 
+def fill_missing_values(ds: xr.Dataset) -> xr.Dataset:
+    mean_values = ds.mean(dim=['lat', 'lon'], skipna=True)
+    return ds.fillna(mean_values)
+
+def has_nan(ds: xr.Dataset, desc):
+    for name, values in ds.items():
+        isnan = np.isnan(values.values)
+        if isnan.ndim == 3:
+            isnan = np.any(isnan, axis=(1, 2))
+        print(desc, name, isnan)
 
 ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'stride', 'all_variables'])
 def extract_dataset_samples(args: ProcessArgs) -> list[str]:
     row, domain_size, stride, all_variables = args
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
+    # has_nan(ds, 'loading')
+    ds = fill_missing_values(ds)
+    # has_nan(ds, 'fill missing')
     ds = downscale_ds_to_1deg_resolution(ds)
+    # has_nan(ds, 'down scale')
+    # raise Error()
     lat, lon = ds['lat'].values, ds['lon'].values
     latmin, latmax = lat.min(), lat.max()
     lonmin, lonmax = lon.min(), lon.max()

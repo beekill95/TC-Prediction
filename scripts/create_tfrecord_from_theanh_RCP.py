@@ -99,19 +99,26 @@ def to_example(value: np.ndarray, *, genesis_locations: np.ndarray, genesis_date
     return tf.train.Example(features=tf.train.Features(feature=feature))
 
 
+def fill_missing_values(ds: xr.Dataset) -> xr.Dataset:
+    mean_values = ds.mean(dim=['lat', 'lon'], skipna=True)
+    return ds.fillna(mean_values)
+
+
 def downscale_ds_to_1deg_resolution(ds: xr.Dataset) -> xr.Dataset:
     latmin, lonmin = tuple(round(ds[dim].values.min()) for dim in ['lat', 'lon'])
     latmax, lonmax = tuple(round(ds[dim].values.max())  for dim in ['lat', 'lon'])
     return ds.interp(
         lat=np.arange(latmin, latmax + 1),
         lon=np.arange(lonmin, lonmax + 1),
-        method='linear')
+        method='linear',
+        kwargs={"fill_value": "extrapolate"},)
 
 
 ProcessArgs = namedtuple('ProcessArgs', ['row'])
 def convert_nc_file_to_tfrecord(args: ProcessArgs):
     row = args.row
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
+    ds = fill_missing_values(ds)
     ds = downscale_ds_to_1deg_resolution(ds)
     lat, lon = ds['lat'].values, ds['lon'].values
     latmin, lonmin = lat.min(), lon.min()
