@@ -25,6 +25,12 @@ def parse_arguments(args=None):
         type=int,
         help='Number of PCA components.')
     parser.add_argument(
+        '--pca-whitening',
+        dest='pca_whitening',
+        action='store_true',
+        help='Whether should we whiten the resulting projection.',
+    )
+    parser.add_argument(
         '--suffix',
         default='',
         help='Suffix to be added to output files.')
@@ -32,7 +38,7 @@ def parse_arguments(args=None):
     return parser.parse_args(args)
 
 
-def extract_reshape_data_to_2d_matrix(data, *args):
+def extract_reshape_data_to_2d_matrix(data, *_):
     """
     This function will extract the data part only,
     and reshape it from (W, H, C) into (W * H, C)
@@ -60,7 +66,7 @@ def main(args=None):
         scaler.partial_fit(data)
 
     # Next, scale data using standard scaler, and then fit PCA.
-    pca = IncrementalPCA(args.nb_pca)
+    pca = IncrementalPCA(args.nb_pca, whiten=args.pca_whitening)
     for data in tqdm(iter(ds), desc='PCA'):
         data = scaler.transform(data)
         pca.partial_fit(data)

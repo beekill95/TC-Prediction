@@ -29,13 +29,13 @@ from shapely.geometry import Polygon
 # In this experiment, I will count the number of TC genesis from
 # the patches prediction result.
 
-path = 'other_experiments/binary_classification_all_patches/06_exp01_future_projection_RCP45.csv'
+path = 'other_experiments/binary_classification_all_patches/future_projection/06_exp02_future_projection_RCP45.csv'
 df = pd.read_csv(path)
 df.head()
 
 # Apply threshold to create genesis prediction.
 
-df['genesis'] = df['pred'] >= 0.6
+df['genesis'] = df['pred'] >= 0.5
 df.head()
 
 len(df[df['pred'] >= 0.5]) / len(df)
@@ -293,7 +293,7 @@ dbscan = cluster.DBSCAN(eps=6, min_samples=2)
 dbscan_cluster = dbscan.fit_predict(cluster_2030_data_df[['lat', 'lon', 'days_scaled']])
 print(dbscan_cluster[:5], set(dbscan_cluster))
 # visualize_clusters(cluster_2030_data_df, dbscan_cluster, 2030, 'DBSCAN')
-visualize_clusters_1plot(cluster_2030_data_df, dbscan_cluster, 2030, 'DBSCAN')
+visualize_clusters_1plot(cluster_2030_data_df, dbscan_cluster, 2040, 'DBSCAN')
 
 
 # +
