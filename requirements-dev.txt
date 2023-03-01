@@ -1,6 +1,0 @@
-autopep8
-jupyterlab
-jupyterlab_nvdashboard
-jupytext
-python-dotenv
-
