@@ -143,6 +143,33 @@ files = [
 python-dateutil = ">=2.7.0"
 
 [[package]]
+name = "arviz"
+version = "0.15.0"
+description = "Exploratory analysis of Bayesian models"
+category = "main"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "arviz-0.15.0-py3-none-any.whl", hash = "sha256:24f46d864c050d3ad422e7a0ebb93735dd9a0a38cc5b2cf5bfa8254a35ea63b4"},
+    {file = "arviz-0.15.0.tar.gz", hash = "sha256:80961e4552680758a2049ca0adcdb02ae8e1f3e7ce57f410f0a778dcefe027e3"},
+]
+
+[package.dependencies]
+h5netcdf = ">=1.0.2"
+matplotlib = ">=3.2"
+numpy = ">=1.20.0"
+packaging = "*"
+pandas = ">=1.4.0"
+scipy = ">=1.8.0"
+setuptools = ">=60.0.0"
+typing-extensions = ">=4.1.0"
+xarray = ">=0.21.0"
+xarray-einstats = ">=0.3"
+
+[package.extras]
+all = ["bokeh (>=1.4.0,<3.0)", "contourpy", "dask[distributed]", "netcdf4", "numba", "ujson", "zarr (>=2.5.0)"]
+
+[[package]]
 name = "asttokens"
 version = "2.2.1"
 description = "Annotate AST trees with source code positions"
@@ -1091,6 +1118,22 @@ files = [
 
 [package.extras]
 protobuf = ["grpcio-tools (>=1.51.3)"]
+
+[[package]]
+name = "h5netcdf"
+version = "1.1.0"
+description = "netCDF4 via h5py"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "h5netcdf-1.1.0-py2.py3-none-any.whl", hash = "sha256:338e65212cee129e4508a49994f230a3083910fbf20454bb57aa1ca99687ad34"},
+    {file = "h5netcdf-1.1.0.tar.gz", hash = "sha256:932c3b573bed7370ebfc9e802cd60f1a4da5236efb11b36eeff897324d76bf56"},
+]
+
+[package.dependencies]
+h5py = "*"
+packaging = "*"
 
 [[package]]
 name = "h5py"
@@ -4305,6 +4348,29 @@ parallel = ["dask[complete]"]
 viz = ["matplotlib", "nc-time-axis", "seaborn"]
 
 [[package]]
+name = "xarray-einstats"
+version = "0.5.1"
+description = "Stats, linear algebra and einops for xarray"
+category = "main"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "xarray-einstats-0.5.1.tar.gz", hash = "sha256:45283e8b471ac54ac2957bc14e311f681b84dabc50c85959b9931e6f5cc60bcb"},
+    {file = "xarray_einstats-0.5.1-py3-none-any.whl", hash = "sha256:cfe63d788077b667624c96d0b0a9144323861888a4d519777083234929b0de2d"},
+]
+
+[package.dependencies]
+numpy = ">=1.20"
+scipy = ">=1.6"
+xarray = ">=2022.09.0"
+
+[package.extras]
+doc = ["furo", "jupyter-sphinx", "matplotlib", "myst-nb", "myst-parser[linkify]", "numpydoc", "sphinx (>=4)", "sphinx-copybutton", "sphinx-design", "watermark"]
+einops = ["einops"]
+numba = ["numba (>=0.55)"]
+test = ["hypothesis", "packaging", "pytest", "pytest-cov"]
+
+[[package]]
 name = "y-py"
 version = "0.5.9"
 description = "Python bindings for the Y-CRDT built from yrs (Rust)"
@@ -4403,4 +4469,4 @@ test = ["mypy", "pre-commit", "pytest", "pytest-asyncio", "websockets (>=10.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "951172ff5dfba5319342cfbb69681289602f03e086547faee7db6099469024ec"
+content-hash = "86afadbcb56619cc9bc163e95c004504ec7479e7d78bb95e3a2374749ee7c3a3"
