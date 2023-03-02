@@ -1,6 +1,6 @@
 #!/bin/bash -i
 
-conda activate tc_updated_2
+conda activate tc
 
 # Activate conda environment with tensorflow-gpu
 require_cuda=${3-true}

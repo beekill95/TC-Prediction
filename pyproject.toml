@@ -23,6 +23,8 @@ eccodes = "^1.5.1"
 shapely = "^2.0.1"
 fiona = "^1.9.1"
 matplotlib = ">=1.5,<3.7"
+seaborn = "^0.12.2"
+ensemble-boxes = "^1.0.9"
 
 [tool.poetry.dev-dependencies]
 
@@ -30,6 +32,7 @@ matplotlib = ">=1.5,<3.7"
 jupyterlab = "^3.6.1"
 jupytext = "^1.14.5"
 autopep8 = "^2.0.1"
+ipywidgets = "^8.0.4"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
