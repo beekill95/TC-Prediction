@@ -11,7 +11,8 @@ def get_gradient(model, inputs, preprocessor=None):
 
 def integrated_gradient(model, inp, baseline, preprocessor=None, nb_steps=127):
     """Calculate integrated gradient."""
-    inputs = [baseline + (step / nb_steps) * (inp - baseline) for step in range(nb_steps + 1)]
+    inputs = [baseline + (step / nb_steps) * (inp - baseline)
+              for step in range(nb_steps + 1)]
     inputs = tf.stack(inputs)
     inputs = tf.cast(inputs, dtype=tf.float64)
 

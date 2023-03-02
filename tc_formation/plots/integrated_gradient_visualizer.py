@@ -1,7 +1,9 @@
+from __future__ import annotations
+
+
 import numpy as np
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
-import cv2
 
 
 class IntegratedGradientVisualizer:
@@ -195,8 +197,9 @@ class IntegratedGradientVisualizer:
 
     def visualize(
         self,
-        dataset,
         integrated_gradients,
+        *,
+        ax: plt.Axes,
         polarity="positive",
         clip_above_percentile=99.9,
         clip_below_percentile=0,
@@ -204,7 +207,8 @@ class IntegratedGradientVisualizer:
         structure=np.ones((3, 3)),
         outlines=False,
         outlines_component_percentage=90,
-        ax=None,
+        dataset=None,
+        use_contour=False,
     ):
         # Process the integrated gradients.
         igrads_attr = self.process_grads(
@@ -217,10 +221,17 @@ class IntegratedGradientVisualizer:
             outlines=outlines,
             outlines_component_percentage=outlines_component_percentage,
         )
+        # igrads_attr = np.where(igrads_attr == 0, None, igrads_attr)
+
+        plot_fn = ax.contour if use_contour else ax.contourf
 
         # Show integrated gradient as contour on axes.
-        lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
-        cs = ax.contourf(lats, longs, igrads_attr, cmap='BuPu')
+        if dataset is not None:
+            lats, longs = np.meshgrid(dataset['lon'], dataset['lat'])
+            cs = plot_fn(lats, longs, igrads_attr, cmap='BuPu')
+        else:
+            cs = plot_fn(igrads_attr, cmap='BuPu')
+
         cb = ax.get_figure().colorbar(cs, ax=ax, fraction=0.012, pad=0.015)
         # cb.ax.tick_params(labelsize='xx-large')
 
