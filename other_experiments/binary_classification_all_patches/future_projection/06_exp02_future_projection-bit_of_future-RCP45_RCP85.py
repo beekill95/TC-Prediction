@@ -172,11 +172,27 @@ for X, y in tqdm(iter(original_test_patches_ds)):
     yy_true.append(y)
 
 yy_pred = np.concatenate(yy_pred, axis=0).flatten()
-yy_pred = np.where(yy_pred > 0.5, 1, 0)
 yy_true = np.concatenate(yy_true, axis=0).flatten()
 
-print(f'{precision_score(yy_true, yy_pred)=:.4f}, {recall_score(yy_true, yy_pred)=:.4f}, {f1_score(yy_true, yy_pred)=:.4f}')
+# print(f'{precision_score(yy_true, yy_pred)=:.4f}, {recall_score(yy_true, yy_pred)=:.4f}, {f1_score(yy_true, yy_pred)=:.4f}')
+
+# +
+thresholds = [0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+results = []
+for threshold in thresholds:
+    pred = np.where(yy_pred > threshold, 1, 0)
+    results.append(dict(
+        threshold=threshold,
+        f1=f1_score(yy_true, pred),
+        recall=recall_score(yy_true, pred),
+        precision=precision_score(yy_true, pred),
+    ))
+
+results = pd.DataFrame(results)
+results.plot.bar(x='threshold', figsize=(8, 6))
 # -
+
+results
 
 # # Predictions on Future Projections
 # ## RCP45
