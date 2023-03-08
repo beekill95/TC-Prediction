@@ -379,6 +379,14 @@ ax.set_title(f'Genesis count for year 2080-2100')
 ax.set_xlabel('Year')
 ax.set_ylabel('Genesis Count')
 fig.tight_layout()
+
+# +
+from tc_formation.tcg_analysis.clustering import WeightedFusedBoxesClustering # noqa
+
+wfb_clustering = WeightedFusedBoxesClustering(iou_threshold=0.4)
+print(genesis_df.head())
+wfb_genesis_count = wfb_clustering.count_genesis(genesis_df)
+wfb_genesis_count.head()
 # -
 
 fig, ax = plt.subplots(figsize=(18, 6))

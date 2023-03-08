@@ -330,6 +330,15 @@ ax.set_title(f'Genesis count for year 2080-2100')
 ax.set_xlabel('Year')
 ax.set_ylabel('Genesis Count')
 fig.tight_layout()
+
+# +
+# Test our class.
+from tc_formation.tcg_analysis.clustering import DBScanClustering # noqa
+
+dbscan_clustering = DBScanClustering(genesis_threshold=0.6)
+print(genesis_df.head())
+dbscan_genesis_count = dbscan_clustering.count_genesis(genesis_df)
+dbscan_genesis_count.head()
 # -
 
 fig, ax = plt.subplots(figsize=(18, 6))
@@ -453,54 +462,91 @@ idata = az.from_numpyro(mcmc)
 az.plot_trace(idata)
 plt.tight_layout()
 
+# +
+# def tcg_trend_hierarchical_model(y: jnp.ndarray, year: jnp.ndarray, grp: jnp.ndarray, nb_grp: int):
+#     # First, we will normalize the year.
+#     year_mean = jnp.mean(year)
+#     year_sd = jnp.std(year)
+#     z_year = (year - year_mean) / year_sd
+
+#     # Priors for the normalized coefficients' means and standard deviations.
+#     z_b0_mean = numpyro.sample('_z_b0_mean', dist.Normal(0, 100))
+#     z_b1_mean = numpyro.sample('_z_b1_mean', dist.Normal(0, 100))
+#     z_b0_std = numpyro.sample('_z_b0_std', dist.Uniform(0.01, 100))
+#     z_b1_std = numpyro.sample('_z_b1_std', dist.Uniform(0.01, 100))
+
+#     # Specify distribution of the coefficients.
+#     # Now, we have to center the data to prevent stuffs.
+#     z_b0_ = numpyro.sample('_z_b0_', dist.Normal(0, 1).expand((nb_grp, )))
+#     z_b1_ = numpyro.sample('_z_b1_', dist.Normal(0, 1).expand((nb_grp, )))
+#     z_b0 = numpyro.deterministic('_z_b0', z_b0_mean + z_b0_ * z_b0_std)
+#     z_b1 = numpyro.deterministic('_z_b1', z_b1_mean + z_b1_ * z_b1_std)
+
+#     # Now, we can specify the TCG count.
+#     nb_samples = y.shape[0]
+#     with numpyro.plate('obs', nb_samples) as idx:
+#         g = grp[idx]
+#         mean = numpyro.deterministic(
+#             'mean', jnp.exp(z_b0[g] + z_year * z_b1[g]))
+#         numpyro.sample('y', dist.Poisson(mean), obs=y[idx])
+
+#     # Transform the coefficients back to normal scale.
+#     numpyro.deterministic('b0', z_b0 - year_mean * z_b1 / year_sd)
+#     numpyro.deterministic('b1', z_b1 / year_sd)
+
+
+# kernel = NUTS(tcg_trend_hierarchical_model)
+# mcmc = MCMC(kernel, num_warmup=1000, num_samples=20000, num_chains=4)
+# years = genesis_count_df['year'].values
+# mcmc.run(
+#     random.PRNGKey(0),
+#     y=jnp.array(genesis_count_df['genesis'].values),
+#     year=jnp.array(years),
+#     grp=jnp.array(np.where(years <= 2050, 0, 1)),
+#     nb_grp=2,
+# )
+# mcmc.print_summary()
 
 # +
-def tcg_trend_hierarchical_model(y: jnp.ndarray, year: jnp.ndarray, grp: jnp.ndarray, nb_grp: int):
-    # First, we will normalize the year.
-    year_mean = jnp.mean(year)
-    year_sd = jnp.std(year)
-    z_year = (year - year_mean) / year_sd
-
-    # Priors for the normalized coefficients' means and standard deviations.
-    z_b0_mean = numpyro.sample('_z_b0_mean', dist.Normal(0, 100))
-    z_b1_mean = numpyro.sample('_z_b1_mean', dist.Normal(0, 100))
-    z_b0_std = numpyro.sample('_z_b0_std', dist.Uniform(0.01, 100))
-    z_b1_std = numpyro.sample('_z_b1_std', dist.Uniform(0.01, 100))
-
-    # Specify distribution of the coefficients.
-    # Now, we have to center the data to prevent stuffs.
-    z_b0_ = numpyro.sample('_z_b0_', dist.Normal(0, 1).expand((nb_grp, )))
-    z_b1_ = numpyro.sample('_z_b1_', dist.Normal(0, 1).expand((nb_grp, )))
-    z_b0 = numpyro.deterministic('_z_b0', z_b0_mean + z_b0_ * z_b0_std)
-    z_b1 = numpyro.deterministic('_z_b1', z_b1_mean + z_b1_ * z_b1_std)
-
-    # Now, we can specify the TCG count.
-    nb_samples = y.shape[0]
-    with numpyro.plate('obs', nb_samples) as idx:
-        g = grp[idx]
-        mean = numpyro.deterministic(
-            'mean', jnp.exp(z_b0[g] + z_year * z_b1[g]))
-        numpyro.sample('y', dist.Poisson(mean), obs=y[idx])
-
-    # Transform the coefficients back to normal scale.
-    numpyro.deterministic('b0', z_b0 - year_mean * z_b1 / year_sd)
-    numpyro.deterministic('b1', z_b1 / year_sd)
+# idata = az.from_numpyro(mcmc)
+# az.plot_trace(idata)
+# plt.tight_layout()
 
 
-kernel = NUTS(tcg_trend_hierarchical_model)
+# +
+from tc_formation.tcg_analysis.models import hier_tcg_trend_model # noqa
+
+
+def normalize_year(year: np.ndarray, period: np.ndarray):
+    nb_period = len(np.unique(period))
+    year_Z = np.zeros_like(year, dtype=np.float32)
+    for i in range(nb_period):
+        years_in_period = year[period == i]
+        mean = years_in_period.mean()
+        std = years_in_period.std()
+        year_Z[period == i] = (years_in_period - mean) / std
+
+    return year_Z
+        
+
+kernel = NUTS(hier_tcg_trend_model,
+              init_strategy=init_to_median,
+              target_accept_prob=0.999)
 mcmc = MCMC(kernel, num_warmup=1000, num_samples=20000, num_chains=4)
 years = genesis_count_df['year'].values
+period = np.where(years <= 2050, 0, 1)
 mcmc.run(
     random.PRNGKey(0),
-    y=jnp.array(genesis_count_df['genesis'].values),
-    year=jnp.array(years),
-    grp=jnp.array(np.where(years <= 2050, 0, 1)),
-    nb_grp=2,
+    tcg_freq=jnp.array(genesis_count_df['genesis'].values),
+    year=jnp.array(normalize_year(years, period)),
+    period=jnp.array(period),
+    nb_period=2,
 )
 mcmc.print_summary()
 # -
 
+normalize_year(years, period)
+
 idata = az.from_numpyro(mcmc)
 az.plot_trace(idata)
 plt.tight_layout()
-
