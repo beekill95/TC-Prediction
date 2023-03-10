@@ -82,7 +82,7 @@ rcp85_count_df = clustering.count_genesis(rcp85_df)
 rcp45_count_df['rcp'] = 0
 rcp85_count_df['rcp'] = 1
 wfb_count_df = pd.concat([rcp45_count_df, rcp85_count_df])
-wfb_count_df['cluster'] = 'wfb'
+wfb_count_df['cluster'] = 'wbf'
 # -
 
 # ## Trend Analysis
@@ -115,16 +115,118 @@ plt.tight_layout()
 
 # ### Year
 
+plt.figure(figsize=(4, 4))
 az.plot_posterior(idata, var_names=['b1'], hdi_prob=0.95, ref_val=0., point_estimate='mode')
+plt.title('')
 
 # ### RCP Scenarios
 
-az.plot_posterior(idata, var_names=['b2'], coords=dict(rcp='RCP45'), hdi_prob=0.95, ref_val=0., point_estimate='mode')
+# +
+fig, axes = plt.subplots(ncols=2, figsize=(8, 4), layout='constrained')
+ax = axes[0]
+az.plot_posterior(
+    idata,
+    var_names=['b2'],
+    coords=dict(rcp='RCP45'),
+    hdi_prob=0.95,
+    ref_val=0.,
+    point_estimate='mode',
+    ax=ax)
+ax.set_title('a)', loc='left')
+ax.set_title('', loc='center')
 
-az.plot_posterior(idata, var_names=['b2'], coords=dict(rcp='RCP85'), hdi_prob=0.95, ref_val=0., point_estimate='mode')
+ax = axes[1]
+az.plot_posterior(
+    idata,
+    var_names=['b2'],
+    coords=dict(rcp='RCP85'),
+    hdi_prob=0.95,
+    ref_val=0.,
+    point_estimate='mode',
+    ax=ax)
+ax.set_title('b)', loc='left')
+ax.set_title('', loc='center')
+# -
 
 # ### Clustering Method
 
-az.plot_posterior(idata, var_names=['b3'], coords=dict(cluster='dbscan'), hdi_prob=0.95, ref_val=0., point_estimate='mode')
+# +
+fig, axes = plt.subplots(ncols=2, figsize=(8, 4), layout='constrained')
+ax = axes[0]
+az.plot_posterior(
+    idata,
+    var_names=['b3'],
+    coords=dict(cluster='dbscan'),
+    hdi_prob=0.95,
+    ref_val=0.,
+    point_estimate='mode',
+    ax=ax)
+ax.set_title('a)', loc='left')
+ax.set_title('', loc='center')
 
-az.plot_posterior(idata, var_names=['b3'], coords=dict(cluster='wfb'), hdi_prob=0.95, ref_val=0., point_estimate='mode')
+ax = axes[1]
+az.plot_posterior(
+    idata,
+    var_names=['b3'],
+    coords=dict(cluster='wbf'),
+    hdi_prob=0.95,
+    ref_val=0.,
+    point_estimate='mode',
+    ax=ax)
+ax.set_title('b)', loc='left')
+ax.set_title('', loc='center')
+# -
+
+# ### Difference in genesis between the end and the mid-century
+
+# +
+import numpy as np # noqa
+
+
+mid_century_years = np.arange(2030, 2051)
+end_century_years = np.arange(2080, 2101)
+print(mid_century_years)
+# -
+
+# Here, we will calculate the difference between number of storms between
+# mid-century and end-century period,
+# we do that by ignoring the coefficients associated with other factors
+# (i.e. set these coefficients to 0.)
+
+# +
+# These will have the shape (nb_chains, nb_draws).
+b0 = idata['posterior']['b0'].values
+b1 = idata['posterior']['b1'].values
+
+# And we want to calculate the mean for every year.
+# The resulting array will be (nb_years, nb_chains, nb_draws)
+
+# mean_nb_storms_mid_century = np.exp(b0[None, ...] + b1[None, ...] * mid_century_years[..., None, None])
+# mean_nb_storms_end_century = np.exp(b0[None, ...] + b1[None, ...] * end_century_years[..., None, None])
+# print(mean_nb_storms_mid_century.shape)
+
+# Display the results of these years: 2030 vs 2080, 2040 vs 2090, and 2050 vs 2100.
+titles = ['a)', 'b)', 'c)']
+years_to_compare = [
+    (2030, 2080),
+    (2040, 2090),
+    (2050, 2100),
+]
+fig, axes = plt.subplots(ncols=3, figsize=(12, 4), layout='constrained')
+for title, (mid_year, end_year), ax in zip(titles, years_to_compare, axes.flatten()):
+    # mid_idx, = np.where(mid_century_years == mid_year)
+    # end_idx, = np.where(end_century_years == end_year)
+    mean_end = np.exp(b0 + b1 * end_year)
+    mean_mid = np.exp(b0 + b1 * mid_year)
+    mean_diff = mean_end - mean_mid
+
+    # mean_nb_storms_diff = mean_nb_storms_end_century[end_idx] - mean_nb_storms_mid_century[mid_idx]
+    az.plot_posterior(
+        mean_diff,
+        ref_val=0.,
+        hdi_prob=0.95,
+        point_estimate='mode',
+        ax=ax,
+    )
+    ax.set_title(title, loc='left')
+    ax.set_title('', loc='center')
