@@ -230,3 +230,28 @@ for title, (mid_year, end_year), ax in zip(titles, years_to_compare, axes.flatte
     )
     ax.set_title(title, loc='left')
     ax.set_title('', loc='center')
+# -
+
+# Instead of displaying the results like above,
+# how about we show the difference between 2030 - 2100 in different RCP scenarios.
+
+b2_rcp45 = idata['posterior']['b2'].sel(rcp='RCP45').values
+b2_rcp85 = idata['posterior']['b2'].sel(rcp='RCP85').values
+fig, axes = plt.subplots(ncols=2, figsize=(8, 4), layout='constrained')
+data = [
+    ('a)', b2_rcp45, axes[0]),
+    ('b)', b2_rcp85, axes[1]),
+]
+for title, b2, ax in data:
+    mean_2030 = np.exp(b0 + b1 * 2030 + b2)
+    mean_2100 = np.exp(b0 + b1 * 2100 + b2)
+    mean_diff = mean_2100 - mean_2030
+    az.plot_posterior(
+        mean_diff,
+        ref_val=0.,
+        hdi_prob=0.95,
+        point_estimate='mode',
+        ax=ax,
+    )
+    ax.set_title(title, loc='left')
+    ax.set_title('', loc='center')
