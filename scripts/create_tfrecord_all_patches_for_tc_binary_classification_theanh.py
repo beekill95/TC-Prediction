@@ -16,7 +16,8 @@ except ImportError:
 
 
 import argparse
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from multiprocessing import Pool
 import numpy as np
@@ -83,23 +84,31 @@ def parse_args(args=None):
         type=float,
         help='Stride (in degrees). Default is 5deg.')
     parser.add_argument(
+        '--downscale',
+        action='store_true',
+        help='Whether to downscale the extracted subset to 1-degree resolution. Default to False.')
+    parser.add_argument(
         '--from-date',
         dest='from_date',
-        default='20300101',
-        type=lambda d: datetime.strptime(d, '%Y%m%d'),
-        help='Extract data from this date onward.')
+        # default='20300101',
+        type=parse_date_from_arg_string,
+        help='Extract data from this date onward. Default is None, which means extract from the beginning.')
     parser.add_argument(
         '--till-date',
         dest='till_date',
-        default='20350101',
-        type=lambda d: datetime.strptime(d, '%Y%m%d'),
-        help='Extract data to this date.')
+        # default='20350101',
+        type=parse_date_from_arg_string,
+        help='Extract data to this date. Default is None, which means extract till the end.')
     parser.add_argument(
         '--outfile',
         required=True,
         help='Path to output file.')
 
     return parser.parse_args(args)
+
+
+def parse_date_from_arg_string(d: str | None):
+    return datetime.strptime(d, '%Y%m%d') if d is not None else None
 
 
 def to_example(value: np.ndarray, pos: np.ndarray, genesis: bool, path: str):
@@ -122,9 +131,11 @@ def downscale_ds_to_1deg_resolution(ds: xr.Dataset) -> xr.Dataset:
         method='linear',
         kwargs={"fill_value": "extrapolate"},)
 
+
 def fill_missing_values(ds: xr.Dataset) -> xr.Dataset:
     mean_values = ds.mean(dim=['lat', 'lon'], skipna=True)
     return ds.fillna(mean_values)
+
 
 def has_nan(ds: xr.Dataset, desc):
     for name, values in ds.items():
@@ -133,16 +144,23 @@ def has_nan(ds: xr.Dataset, desc):
             isnan = np.any(isnan, axis=(1, 2))
         print(desc, name, isnan)
 
-ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'stride', 'all_variables'])
+
+@dataclass
+class ProcessArgs:
+    row: pd.Series
+    domain_size: float
+    stride: float
+    downscale: bool
+    all_variables: bool
+
+
+# ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'downscale', 'stride', 'all_variables'])
 def extract_dataset_samples(args: ProcessArgs) -> list[str]:
-    row, domain_size, stride, all_variables = args
+    row, domain_size, stride = args.row, args.domain_size, args.stride
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
-    # has_nan(ds, 'loading')
     ds = fill_missing_values(ds)
-    # has_nan(ds, 'fill missing')
-    ds = downscale_ds_to_1deg_resolution(ds)
-    # has_nan(ds, 'down scale')
-    # raise Error()
+    if args.downscale:
+        ds = downscale_ds_to_1deg_resolution(ds)
     lat, lon = ds['lat'].values, ds['lon'].values
     latmin, latmax = lat.min(), lat.max()
     lonmin, lonmax = lon.min(), lon.max()
@@ -171,7 +189,7 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
 
             patch = ds.sel(lat=slice(lt, lt + domain_size), lon=slice(ln, ln + domain_size))
             patch = (extract_subset(patch, SUBSET)
-                     if not all_variables
+                     if not args.all_variables
                      else extract_all_variables(patch, variables_order))
             patch_example = to_example(
                 patch, np.asarray([lt, ln]), genesis, row['Path'])
@@ -182,11 +200,17 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
 
 def extract_dataset_samples_parallel(
         genesis_df: pd.DataFrame, outputfile: str, *,
-        domain_size: float, stride: float, processes: int, desc: str, all_variables: bool):
+        domain_size: float, stride: float, downscale: bool, processes: int, desc: str, all_variables: bool):
     with Pool(processes) as pool:
         tasks = pool.imap_unordered(
             extract_dataset_samples, 
-            (ProcessArgs(r, domain_size, stride, all_variables) for _, r in genesis_df.iterrows()))
+            (ProcessArgs(
+                row=r,
+                domain_size=domain_size,
+                stride=stride,
+                downscale=downscale,
+                all_variables=all_variables)
+             for _, r in genesis_df.iterrows()))
 
         with tf.io.TFRecordWriter(outputfile) as writer:
             for results in tqdm(tasks, total=len(genesis_df), desc=desc):
@@ -202,15 +226,6 @@ def main(args=None):
     files = list_reanalysis_files(args.indir)
     genesis_df, _ = load_best_track_files_theanh(args.best_track)
 
-    # Remove storms that are outside the domain of interest.
-    # ds = xr.load_dataset(files['Path'].iloc[0], engine='netcdf4')
-    # lat, lon = ds['lat'].values, ds['lon'].values
-    # latmin, latmax = lat.min(), lat.max()
-    # lonmin, lonmax = lon.min(), lon.max()
-    # genesis_df = genesis_df[
-    #     (latmin <= genesis_df['LAT']) & (genesis_df['LAT'] <= latmax)
-    #     & (lonmin <= genesis_df['LON']) & (genesis_df['LON'] <= lonmax)]
-
     # Combine best track with data that we have.
     # In this step, all negative samples
     # (observations without TC genesis) are removed.
@@ -222,14 +237,16 @@ def main(args=None):
         'OriginalDate': 'first',
         'LAT': lambda x: x.iloc[0] if len(x) == 1 else list(x),
         'LON': lambda x: x.iloc[0] if len(x) == 1 else list(x),
-        # 'BASIN': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
         'SID': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
         'Date': lambda x: x.iloc[0] if len(x) == 1 else list(x), 
     })
     genesis_df['Path'] = genesis_df.index
 
     dates = genesis_df['OriginalDate']
-    genesis_df = genesis_df[(dates >= args.from_date) & (dates < args.till_date)]
+    if args.from_date is not None:
+        genesis_df = genesis_df[dates >= args.from_date]
+    if args.till_date is not None:
+        genesis_df = genesis_df[dates < args.till_date]
 
     # Create output directories.
     outdir = os.path.dirname(outfile)
@@ -240,7 +257,9 @@ def main(args=None):
     extract_dataset_samples_parallel(
         genesis_df,
         outfile,
-        domain_size=args.domain_size, stride=args.stride,
+        domain_size=args.domain_size,
+        stride=args.stride,
+        downscale=args.downscale,
         processes=args.processes,
         desc=f'Extracting from {args.from_date} to {args.till_date}',
         all_variables=args.all_variables)

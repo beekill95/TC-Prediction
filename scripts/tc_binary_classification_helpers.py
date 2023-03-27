@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import abc
 import cartopy.io.shapereader as shpreader
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import fiona
@@ -97,7 +97,6 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
         except ValueError:
             year = parse_year_from_file(file)
 
-
         storms_in_year = pd.read_csv(
             file,
             names=['Days', 'StormId', 'LON', 'LAT'],
@@ -106,7 +105,6 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
         )
         storms_in_year['SID'] = storms_in_year['StormId'].apply(
             lambda id: f'{year}-{id}')
-        # genesis_in_year = storms_in_year.groupby('StormId').first()
 
         # Convert 'Days' in year to date.
         storms_in_year['Date'] = storms_in_year['Days'].apply(
@@ -116,7 +114,6 @@ def load_best_track_files_theanh(files_pattern: str) -> tuple[pd.DataFrame, pd.D
             storms_in_year[['SID', 'Date', 'LAT', 'LON']])
 
     storms_df = pd.concat(storms).sort_values('Date')
-    # print(storms_df[storms_df['Date'] == datetime(1989, 7, 7, 0, 0)])
 
     genesis_df = storms_df.groupby('SID').first().copy()
     genesis_df['SID'] = genesis_df.index
