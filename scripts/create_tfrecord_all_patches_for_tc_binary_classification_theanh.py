@@ -274,8 +274,8 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
 
             patch = ds.sel(lat=slice(lt, lt + domain_size), lon=slice(ln, ln + domain_size))
             stormid = row['SID']
-            stormid = '_'.join(stormid)if isinstance(stormid, list) else stormid 
-            r = writer.prepare_dataset(patch, (lt, ln), genesis, row['Path'], stormid)
+            stormid = '_'.join(stormid)if isinstance(stormid, list) else str(stormid)
+            r = writer.prepare_dataset(patch, (lt, ln), genesis, str(row['Path']), stormid)
             results.append(r)
 
     return results
