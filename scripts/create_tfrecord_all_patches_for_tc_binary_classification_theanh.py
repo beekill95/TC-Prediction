@@ -15,6 +15,7 @@ except ImportError:
     from tfrecords_utils import *
 
 
+import abc
 import argparse
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from multiprocessing import Pool
 import numpy as np
 import os
 import pandas as pd
+import pathlib
 import tensorflow as tf
 from tqdm import tqdm
 import xarray as xr
@@ -70,7 +72,8 @@ def parse_args(args=None):
         '--all-variables',
         dest='all_variables',
         action='store_true',
-        help='Whether should we extract all variables or not. Default is False, which means only a subset is extracted.'
+        help='Whether should we extract all variables or not. Default is False, which means only a subset is extracted.\
+        This flag is ignored when netcdf files are extracted, which means netcdf files always contain all variables.'
     )
     parser.add_argument(
         '--domain-size',
@@ -100,26 +103,20 @@ def parse_args(args=None):
         type=parse_date_from_arg_string,
         help='Extract data to this date. Default is None, which means extract till the end.')
     parser.add_argument(
-        '--outfile',
+        '--outformat',
+        default='tfrecords',
+        choices=['tfrecords', 'netcdf'],
+        help='Decide between `tfrecords` and `netcdf` output formats. Default is `tfrecords`.')
+    parser.add_argument(
+        '--out',
         required=True,
-        help='Path to output file.')
+        help='Path to output file (tfrecords) or output directory (netcdf).')
 
     return parser.parse_args(args)
 
 
 def parse_date_from_arg_string(d: str | None):
     return datetime.strptime(d, '%Y%m%d') if d is not None else None
-
-
-def to_example(value: np.ndarray, pos: np.ndarray, genesis: bool, path: str):
-    feature = dict(
-        data=numpy_feature(value),
-        data_shape=int64_feature(value.shape),
-        position=numpy_feature(pos),
-        genesis=int64_feature([genesis]),
-        filename=bytes_feature(str.encode(path)),
-    )
-    return tf.train.Example(features=tf.train.Features(feature=feature))
 
 
 def downscale_ds_to_1deg_resolution(ds: xr.Dataset) -> xr.Dataset:
@@ -145,16 +142,106 @@ def has_nan(ds: xr.Dataset, desc):
         print(desc, name, isnan)
 
 
+class OutputWriter(abc.ABC):
+    @abc.abstractmethod
+    def prepare_destination(self):
+        pass
+
+    @abc.abstractmethod
+    def prepare_dataset(self, ds: xr.Dataset, location: tuple[float, float], is_genesis: bool, original_path: str, stormid: str):
+        """
+        This function will be called for each dataset patch that we extract.
+        The result returned by this function will be appended into a list,
+        which will be returned to a parent process.
+        This function will be called by multiple parallel processes.
+        """
+        pass
+
+    @abc.abstractmethod
+    def write(self, tasks, nb_files: int, desc: str):
+        """
+        This function will be called in the parent process.
+        The tasks is an iterator that stores the results of the `prepare_dataset()` function.
+        In particular, each element in the iterator is a list containing the result `prepare_dataset` returned.
+        """
+        pass
+
+
+class netcdf4Writer(OutputWriter):
+    def __init__(self, outputdir: str) -> None:
+        self._posdir = os.path.join(outputdir, 'pos')
+        self._negdir = os.path.join(outputdir, 'neg')
+
+    def prepare_destination(self):
+        # Make sure that the folder does not exist.
+        os.makedirs(self._posdir)
+        os.makedirs(self._negdir)
+
+    def prepare_dataset(self, ds: xr.Dataset, location: tuple[float, float], is_genesis: bool, original_path: str, stormid: str):
+        """
+        We don't have to prepare anything here, just save the data.
+        """
+        path = pathlib.Path(original_path)
+        datetime_part = '_'.join(path.stem.split('_')[1:])
+        lat, lon = location
+        fn_prefix = f'{datetime_part}_{lat:.2f}_{lon:.2f}'
+        save_path = (os.path.join(self._posdir, f'{fn_prefix}_{stormid}.nc')
+                     if is_genesis
+                     else os.path.join(self._negdir, f'{fn_prefix}.nc'))
+        ds.to_netcdf(save_path)
+
+    def write(self, tasks, nb_files: int, desc: str):
+        """
+        This function will be called in the parent process.
+        """
+        for _ in tqdm(tasks, total=nb_files, desc=desc):
+            pass
+
+
+class TfrecordWriter(OutputWriter):
+    def __init__(self, outfile: str, extract_all_variables: bool, variables_order: list[str]) -> None:
+        self._outfile = outfile
+        self._variables_order = variables_order
+        self._extract_all_variables = extract_all_variables
+
+    def prepare_destination(self):
+        # Make sure that the destination file does not exist.
+        assert not os.path.isfile(self._outfile), f'Output file exists: {self._outfile}'
+
+    def prepare_dataset(self, ds: xr.Dataset, location: tuple[float, float], is_genesis: bool, original_path: str, stormid: str):
+        patch = (extract_subset(ds, SUBSET)
+                 if not self._extract_all_variables
+                 else extract_all_variables(ds, self._variables_order))
+        example = self.to_example(patch, np.asarray(location), is_genesis, original_path, stormid)
+        return example.SerializeToString()
+
+    def to_example(self, value: np.ndarray, pos: np.ndarray, genesis: bool, path: str, stormid: str):
+        feature = dict(
+            data=numpy_feature(value),
+            data_shape=int64_feature(value.shape),
+            position=numpy_feature(pos),
+            genesis=int64_feature([genesis]),
+            filename=bytes_feature(str.encode(path)),
+            stormid=bytes_feature(str.encode(stormid)),
+        )
+        return tf.train.Example(features=tf.train.Features(feature=feature))
+
+    def write(self, tasks, nb_files: int, desc: str):
+        with tf.io.TFRecordWriter(self._outfile) as writer:
+            for results in tqdm(tasks, total=nb_files, desc=desc):
+                for r in results:
+                    writer.write(r)
+
+
 @dataclass
 class ProcessArgs:
     row: pd.Series
     domain_size: float
     stride: float
     downscale: bool
-    all_variables: bool
+    writer: OutputWriter
 
 
-# ProcessArgs = namedtuple('ProcessArgs', ['row', 'domain_size', 'downscale', 'stride', 'all_variables'])
 def extract_dataset_samples(args: ProcessArgs) -> list[str]:
     row, domain_size, stride = args.row, args.domain_size, args.stride
     ds = xr.load_dataset(row['Path'], engine='netcdf4')
@@ -167,10 +254,8 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
 
     g_lat, g_lon = row['LAT'], row['LON']
 
-    variables_order = list(VARIABLES_ORDER)
-    variables_order.remove('capesfc')
-
     results = []
+    writer = args.writer
     for lt in np.arange(latmin, latmax, stride):
         for ln in np.arange(lonmin, lonmax, stride):
             if ((lt + domain_size) > latmax) or ((ln + domain_size) > lonmax):
@@ -188,19 +273,21 @@ def extract_dataset_samples(args: ProcessArgs) -> list[str]:
                     for glt, gln in zip(g_lat, g_lon))
 
             patch = ds.sel(lat=slice(lt, lt + domain_size), lon=slice(ln, ln + domain_size))
-            patch = (extract_subset(patch, SUBSET)
-                     if not args.all_variables
-                     else extract_all_variables(patch, variables_order))
-            patch_example = to_example(
-                patch, np.asarray([lt, ln]), genesis, row['Path'])
-            results.append(patch_example.SerializeToString())
+            stormid = row['SID']
+            stormid = '_'.join(stormid)if isinstance(stormid, list) else stormid 
+            r = writer.prepare_dataset(patch, (lt, ln), genesis, row['Path'], stormid)
+            results.append(r)
 
     return results
 
 
 def extract_dataset_samples_parallel(
-        genesis_df: pd.DataFrame, outputfile: str, *,
-        domain_size: float, stride: float, downscale: bool, processes: int, desc: str, all_variables: bool):
+        genesis_df: pd.DataFrame, writer: OutputWriter, *,
+        domain_size: float,
+        stride: float,
+        downscale: bool,
+        processes: int,
+        desc: str):
     with Pool(processes) as pool:
         tasks = pool.imap_unordered(
             extract_dataset_samples, 
@@ -209,19 +296,17 @@ def extract_dataset_samples_parallel(
                 domain_size=domain_size,
                 stride=stride,
                 downscale=downscale,
-                all_variables=all_variables)
+                writer=writer)
              for _, r in genesis_df.iterrows()))
 
-        with tf.io.TFRecordWriter(outputfile) as writer:
-            for results in tqdm(tasks, total=len(genesis_df), desc=desc):
-                for r in results:
-                    writer.write(r)
+        writer.prepare_destination()
+        writer.write(tasks, nb_files=len(genesis_df), desc=desc)
 
 
 def main(args=None):
     args = parse_args(args)
     
-    outfile = args.outfile
+    outfile = args.out
 
     files = list_reanalysis_files(args.indir)
     genesis_df, _ = load_best_track_files_theanh(args.best_track)
@@ -248,21 +333,23 @@ def main(args=None):
     if args.till_date is not None:
         genesis_df = genesis_df[dates < args.till_date]
 
-    # Create output directories.
-    outdir = os.path.dirname(outfile)
-    os.makedirs(outdir, exist_ok=True)
+    # Create an appropriate writer.
+    variables_order = list(VARIABLES_ORDER)
+    variables_order.remove('capesfc')
+    writer = (netcdf4Writer(outfile)
+              if args.outformat == 'netcdf'
+              else TfrecordWriter(outfile, args.all_variables, variables_order))
 
     # Extract datasets.
     assert not os.path.isfile(outfile), f'Output file: {outfile=} exists!'
     extract_dataset_samples_parallel(
         genesis_df,
-        outfile,
+        writer,
         domain_size=args.domain_size,
         stride=args.stride,
         downscale=args.downscale,
         processes=args.processes,
-        desc=f'Extracting from {args.from_date} to {args.till_date}',
-        all_variables=args.all_variables)
+        desc=f'Extracting from {args.from_date} to {args.till_date}')
 
 
 if __name__ == '__main__':
