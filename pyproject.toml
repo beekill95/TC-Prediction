@@ -28,6 +28,7 @@ seaborn = "^0.12.2"
 ensemble-boxes = "^1.0.9"
 arviz = "^0.15.0"
 tensorflow-addons = "^0.19.0"
+opencv-python = "^4.7.0.72"
 
 [tool.poetry.group.dev.dependencies]
 jupyterlab = "^3.6.1"
