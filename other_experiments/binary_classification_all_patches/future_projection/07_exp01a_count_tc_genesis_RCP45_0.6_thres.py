@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.0
+#       jupytext_version: 1.14.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -29,13 +29,13 @@ from shapely.geometry import Polygon
 # In this experiment, I will count the number of TC genesis from
 # the patches prediction result.
 
-path = 'other_experiments/binary_classification_all_patches/future_projection/06_exp02_future_projection_RCP85.csv'
+path = 'other_experiments/binary_classification_all_patches/future_projection/06_exp02_future_projection_RCP45.csv'
 df = pd.read_csv(path)
 df.head()
 
 # Apply threshold to create genesis prediction.
 
-df['genesis'] = df['pred'] >= 0.5
+df['genesis'] = df['pred'] >= 0.6
 df.head()
 
 len(df[df['pred'] >= 0.5]) / len(df)
@@ -49,7 +49,7 @@ for name, group in group_df:
 
 # Next, we will count how many TC geneses are detected within the file.
 
-# + tags=[]
+# +
 def Rectangle(x, y, w, h):
     return Polygon(
         [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)])
@@ -158,7 +158,6 @@ plot_tcg_consecutive_days(genesis_df, 2040)
 
 plot_tcg_consecutive_days(genesis_df, 2050)
 
-# + [markdown] tags=[]
 # ### Spatial and Temporal Clustering
 #
 # For this,
@@ -184,7 +183,7 @@ def create_clustering_data_for_year(genesis_pred_df: pd.DataFrame, year: int):
     return genesis_pred_df[genesis_pred_df['genesis']]
 
 
-cluster_2030_data_df = create_clustering_data_for_year(genesis_df, 2030)
+cluster_2030_data_df = create_clustering_data_for_year(genesis_df, 2040)
 cluster_2030_data_df.head(10)
 # -
 
@@ -293,7 +292,7 @@ dbscan = cluster.DBSCAN(eps=6, min_samples=2)
 dbscan_cluster = dbscan.fit_predict(cluster_2030_data_df[['lat', 'lon', 'days_scaled']])
 print(dbscan_cluster[:5], set(dbscan_cluster))
 # visualize_clusters(cluster_2030_data_df, dbscan_cluster, 2030, 'DBSCAN')
-visualize_clusters_1plot(cluster_2030_data_df, dbscan_cluster, 2030, 'DBSCAN')
+visualize_clusters_1plot(cluster_2030_data_df, dbscan_cluster, 2040, 'DBSCAN')
 
 
 # +
@@ -331,3 +330,95 @@ ax.set_title(f'Genesis count for year 2080-2100')
 ax.set_xlabel('Year')
 ax.set_ylabel('Genesis Count')
 fig.tight_layout()
+# -
+
+fig, ax = plt.subplots(figsize=(18, 6))
+df = genesis_count_df[genesis_count_df['year'] <= 2050]
+nb_years = len(df)
+ax.plot(range(nb_years), df['genesis'], label='2030-2050')
+df = genesis_count_df[genesis_count_df['year'] > 2050]
+ax.plot(range(nb_years), df['genesis'], label='2080-2100')
+ax.set_xticks(range(nb_years))
+ax.set_xticklabels([f'{2030 + i}\n{2080 + i}' for i in range(nb_years)])
+ax.set_ylabel('Genesis Count')
+ax.set_xlabel('Year')
+ax.legend()
+fig.tight_layout()
+
+# # Bayesian Data Analysis
+
+# +
+import arviz as az # noqa
+import jax.numpy as jnp # noqa
+import jax.random as random # noqa
+import numpyro # noqa
+import numpyro.distributions as dist # noqa
+from numpyro.infer.initialization import init_to_median # noqa
+from numpyro.infer import MCMC, NUTS # noqa
+
+
+numpyro.set_host_device_count(4)
+
+
+def gamma_from_mode_std(mode, std):
+    # assert mode > 0, 'Mode must be positive'
+    # assert std > 0, 'Standard must be positive'
+
+    std_squared = std**2
+    rate = (mode + jnp.sqrt(mode**2 + 4 * std_squared)) / (2 * std_squared)
+    shape = 1 + mode * rate
+
+    return dist.Gamma(shape, rate)
+
+
+def tcg_trend_hierarchical_model_unnormalized(y: jnp.ndarray, year: jnp.ndarray, grp: jnp.ndarray, nb_grp: int):
+    ymean_log = jnp.log(jnp.mean(y))
+    ysd_log = jnp.log(jnp.std(y))
+
+    # Priors for the normalized coefficients' means and standard deviations.
+    b0_mean = numpyro.sample('b0_mean', dist.Normal(ymean_log, ysd_log*3))
+    b1_mean = numpyro.sample('b1_mean', dist.Normal(0, 1))
+    b0_std = numpyro.sample('b0_std', gamma_from_mode_std(ysd_log, ysd_log * 3))
+    b1_std = numpyro.sample('b1_std', gamma_from_mode_std(1., 1.))
+
+    # Specify distribution of the coefficients.
+    # Now, we have to center the data to prevent stuffs.
+    b0_ = numpyro.sample('b0_', dist.Normal(0, 1))
+    b1_ = numpyro.sample('b1_', dist.Normal(0, 1).expand((nb_grp, )))
+    b0 = numpyro.deterministic('b0', b0_mean + b0_ * b0_std)
+    b1 = numpyro.deterministic('b1', b1_mean + b1_ * b1_std)
+
+    # Now, we can specify the TCG count.
+    nb_samples = y.shape[0]
+    with numpyro.plate('obs', nb_samples) as idx:
+        g = grp[idx]
+        mean = numpyro.deterministic(
+            'mean', jnp.exp(b0 + year * b1[g]))
+        numpyro.sample('y', dist.Poisson(mean), obs=y[idx])
+
+
+kernel = NUTS(tcg_trend_hierarchical_model_unnormalized,
+              init_strategy=init_to_median,
+              target_accept_prob=0.999)
+mcmc = MCMC(kernel, num_warmup=1000, num_samples=20000, num_chains=4)
+years = genesis_count_df['year'].values
+# FIXME: Quick and dirty way to normalize the years (just for testing).
+print(np.arange(0, 20))
+year_mean = np.arange(0, 20).mean()
+year_sd = np.arange(0, 20).std()
+mcmc.run(
+    random.PRNGKey(0),
+    y=jnp.array(genesis_count_df['genesis'].values),
+    year=jnp.array(
+        np.where(years <= 2050,
+                 (years - 2030 - year_mean) / year_sd,
+                 (years - 2080 - year_mean) / year_sd)),
+    grp=jnp.array(np.where(years <= 2050, 0, 1)),
+    nb_grp=2,
+)
+mcmc.print_summary()
+# -
+
+idata = az.from_numpyro(mcmc)
+az.plot_trace(idata)
+plt.tight_layout()

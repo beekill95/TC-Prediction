@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.0
+#       jupytext_version: 1.14.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -19,6 +19,7 @@
 # %autoreload 2
 # # %matplotlib widget
 
+from __future__ import annotations
 from datetime import datetime
 import matplotlib.pyplot as plt
 import os
@@ -49,64 +50,6 @@ for name, group in group_df:
 
 # Next, we will count how many TC geneses are detected within the file.
 
-# + tags=[]
-def Rectangle(x, y, w, h):
-    return Polygon(
-        [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)])
-
-
-def count_genesis(r: pd.DataFrame, domain_size=30):
-    genesis_areas = []
-    for _, row in r.iterrows():
-        if row['genesis']:
-            area = Rectangle(
-                row['lon'], row['lat'], domain_size, domain_size)
-            overlaped_idx = -1
-            for idx, known_area in enumerate(genesis_areas):
-                if known_area.overlaps(area):
-                    overlaped_idx = idx
-                    break
-
-            if overlaped_idx != -1:
-                known_area = genesis_areas[overlaped_idx]
-                genesis_areas[overlaped_idx] = known_area.union(area)
-            else:
-                genesis_areas.append(area)
-
-    return len(genesis_areas)
-
-
-def parse_date(filename: str):
-    filename, _ = os.path.splitext(filename)
-    datepart = '_'.join(filename.split('_')[1:])
-    return datetime.strptime(datepart, '%Y%m%d_%H_%M')
-
-
-count_results = []
-for name, group in group_df:
-    nb_genesis = count_genesis(group)
-    count_results.append({
-        'path': name,
-        'genesis': nb_genesis,
-        'date': parse_date(name),
-    })
-count_results = pd.DataFrame(count_results)
-count_results['year'] = count_results['date'].apply(lambda d: d.year)
-count_results.head()
-# -
-
-# Count number of genesis.
-print(f'{len(count_results)=}, {(count_results["genesis"] > 0).sum()=}')
-
-yearly_count = count_results.groupby('year').agg({'genesis': 'sum'})
-yearly_count.head()
-
-
-# +
-# count_results.to_csv('genesis_daily_count.csv')
-# yearly_count.to_csv('genesis_yearly_count.csv')
-# -
-
 # ## Count Genesis with Spatial and Temporal Merge
 #
 # If a genesis event is detected,
@@ -123,6 +66,12 @@ yearly_count.head()
 # how many consecutive days that the model detect TCG?
 
 # +
+def parse_date(filename: str):
+    filename, _ = os.path.splitext(filename)
+    datepart = '_'.join(filename.split('_')[1:])
+    return datetime.strptime(datepart, '%Y%m%d_%H_%M')
+
+
 def plot_tcg_consecutive_days(genesis_pred_df: pd.DataFrame, year: int):
     # Parse date and filter base on year.
     genesis_pred_df['date'] = genesis_pred_df['path'].apply(parse_date)
@@ -158,7 +107,6 @@ plot_tcg_consecutive_days(genesis_df, 2040)
 
 plot_tcg_consecutive_days(genesis_df, 2050)
 
-# + [markdown] tags=[]
 # ### Spatial and Temporal Clustering
 #
 # For this,
@@ -184,7 +132,7 @@ def create_clustering_data_for_year(genesis_pred_df: pd.DataFrame, year: int):
     return genesis_pred_df[genesis_pred_df['genesis']]
 
 
-cluster_2030_data_df = create_clustering_data_for_year(genesis_df, 2030)
+cluster_2030_data_df = create_clustering_data_for_year(genesis_df, 2040)
 cluster_2030_data_df.head(10)
 # -
 
@@ -286,14 +234,115 @@ def visualize_clusters_1plot(cluster_data_df: pd.DataFrame, clusters: np.ndarray
     fig.tight_layout()
 
 
-# visualize_clusters(cluster_2030_data_df, kmeans_cluster, 2030, 'Kmeans')
-# -
+# +
+from ensemble_boxes import * # noqa
+import statistics # noqa
 
-dbscan = cluster.DBSCAN(eps=6, min_samples=2)
-dbscan_cluster = dbscan.fit_predict(cluster_2030_data_df[['lat', 'lon', 'days_scaled']])
-print(dbscan_cluster[:5], set(dbscan_cluster))
-# visualize_clusters(cluster_2030_data_df, dbscan_cluster, 2030, 'DBSCAN')
-visualize_clusters_1plot(cluster_2030_data_df, dbscan_cluster, 2040, 'DBSCAN')
+
+def construct_3d_spatial_temporal_genesis_box(genesis_df_with_date: pd.DataFrame):
+    def create_current_genesis_box(loc, row: pd.Series):
+        return {
+            'lat': loc[0],
+            'lon': loc[1],
+            'from': row['days_since_May_1st'],
+            'to': row['days_since_May_1st'] + 1,
+            'pred': [row['pred']],
+            'date': [row['date']],
+        }
+
+
+    def update_current_genesis_box(cur_box, row: pd.Series):
+        assert cur_box['to'] == row['days_since_May_1st']
+        cur_box = {**cur_box}
+        cur_box['to'] += 1
+        cur_box['pred'].append(row['pred'])
+        cur_box['date'].append(row['date'])
+        return cur_box
+
+    genesis_df = genesis_df_with_date.groupby(['lat', 'lon'])
+
+    boxes = []
+    for loc, rows in genesis_df:
+        # The rows are ordered in ascending `days_since_May_1st`.
+        cur_box = None
+        rows = rows[rows['genesis']]
+        for _, row in rows.iterrows():
+            if cur_box is None:
+                # First row.
+                cur_box = create_current_genesis_box(loc, row)
+            else:
+                try:
+                    cur_box = update_current_genesis_box(cur_box, row)
+                except AssertionError:
+                    # The date of the current box the not match with the current date.
+                    boxes.append(cur_box)
+
+                    # Create new box.
+                    cur_box = create_current_genesis_box(loc, row)
+
+    return pd.DataFrame(boxes)
+
+
+def generate_box_coordinates(genesis_year_df: pd.DataFrame):
+    def scale_min_max(v, min_v, max_v):
+        return (v - min_v) / (max_v - min_v)
+
+    lat = genesis_year_df['lat'].values
+    lon = genesis_year_df['lon'].values
+    lat_min, lat_max = lat.min(), lat.max() + 30
+    lon_min, lon_max = lon.min(), lon.max() + 30
+    days_min, days_max = genesis_year_df['from'].values.min(), genesis_year_df['to'].values.max()
+
+    genesis_year_df = genesis_year_df.copy()
+    genesis_year_df['norm_lat_lower'] = genesis_year_df['lat'].apply(
+        lambda l: scale_min_max(l, lat_min, lat_max))
+    genesis_year_df['norm_lon_left'] = genesis_year_df['lon'].apply(
+        lambda l: scale_min_max(l, lon_min, lon_max))
+    genesis_year_df['norm_lat_upper'] = genesis_year_df['lat'].apply(
+        lambda l: scale_min_max(l + 30, lat_min, lat_max))
+    genesis_year_df['norm_lon_right'] = genesis_year_df['lon'].apply(
+        lambda l: scale_min_max(l + 30, lon_min, lon_max))
+    genesis_year_df['norm_from'] = genesis_year_df['from'].apply(
+        lambda d: scale_min_max(d, days_min, days_max))
+    genesis_year_df['norm_to'] = genesis_year_df['to'].apply(
+        lambda d: scale_min_max(d, days_min, days_max))
+    return genesis_year_df
+
+
+def merge_spatial_temporal_genesis_box(genesis_year_df: pd.DataFrame, iou_threshold: float | None = None, skip_box_threshold: float = 0.0):
+    # Normalize data.
+    genesis_year_df = generate_box_coordinates(genesis_year_df)
+
+    # Use the weighted 3d box.
+    boxes_list = []
+    scores_list = []
+    labels_list = []
+    for _, row in genesis_year_df.iterrows():
+        boxes_list.append([
+            row['norm_lat_lower'],
+            row['norm_lon_left'],
+            row['norm_from'],
+            row['norm_lat_upper'],
+            row['norm_lon_right'],
+            row['norm_to'],
+        ])
+        scores_list.append(statistics.mean(row['pred']))
+        labels_list.append(1.)
+    
+    # Construct the thingy.
+    results = weighted_boxes_fusion_3d(
+        [boxes_list],
+        [scores_list],
+        [labels_list],
+        weights=None,
+        iou_thr=iou_threshold if iou_threshold is not None else 0.01,
+        skip_box_thr=skip_box_threshold)
+    return results
+
+
+cluster_2030_data_df = construct_3d_spatial_temporal_genesis_box(cluster_2030_data_df)
+boxes, preds, _ = merge_spatial_temporal_genesis_box(cluster_2030_data_df, iou_threshold=0.4)
+(preds > 0.6).sum(), len(preds)
 
 
 # +
@@ -304,12 +353,11 @@ def count_genesis_in_each_year(genesis_df: pd.DataFrame):
     genesis_counts = []
     for year in years:
         cluster_data_df = create_clustering_data_for_year(genesis_df, year)
-        dbscan = cluster.DBSCAN(eps=6, min_samples=2)
-        dbscan_cluster = dbscan.fit_predict(
-            cluster_data_df[['lat', 'lon', 'days_scaled']])
+        cluster_data_df = construct_3d_spatial_temporal_genesis_box(cluster_data_df)
+        boxes, preds, _ = merge_spatial_temporal_genesis_box(cluster_data_df, iou_threshold=0.4)
         genesis_counts.append({
             'year': year,
-            'genesis': len(np.unique(dbscan_cluster[dbscan_cluster >= 0])),
+            'genesis': (preds > 0.6).sum(),
         })
 
     return pd.DataFrame(genesis_counts)
@@ -327,7 +375,29 @@ ax.set_ylabel('Genesis Count')
 ax = axes[1]
 df = genesis_count_df[genesis_count_df['year'] > 2050]
 sns.lineplot(df, x='year', y='genesis', ax=ax)
-ax.set_title(f'Genesis count for year 2050-2080')
+ax.set_title(f'Genesis count for year 2080-2100')
 ax.set_xlabel('Year')
 ax.set_ylabel('Genesis Count')
+fig.tight_layout()
+
+# +
+from tc_formation.tcg_analysis.clustering import WeightedFusedBoxesClustering # noqa
+
+wfb_clustering = WeightedFusedBoxesClustering(iou_threshold=0.4)
+print(genesis_df.head())
+wfb_genesis_count = wfb_clustering.count_genesis(genesis_df)
+wfb_genesis_count.head()
+# -
+
+fig, ax = plt.subplots(figsize=(18, 6))
+df = genesis_count_df[genesis_count_df['year'] <= 2050]
+nb_years = len(df)
+ax.plot(range(nb_years), df['genesis'], label='2030-2050')
+df = genesis_count_df[genesis_count_df['year'] > 2050]
+ax.plot(range(nb_years), df['genesis'], label='2080-2100')
+ax.set_xticks(range(nb_years))
+ax.set_xticklabels([f'{2030 + i}\n{2080 + i}' for i in range(nb_years)])
+ax.set_ylabel('Genesis Count')
+ax.set_xlabel('Year')
+ax.legend()
 fig.tight_layout()

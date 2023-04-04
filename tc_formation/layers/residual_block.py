@@ -11,6 +11,7 @@ class ResidualBlock(layers.Layer):
             filters: int,
             kernel_size: int = 3,
             stride1: int = 1,
+            kernel_regularizer: keras.regularizers.Regularizer | None = None,
             name: str | None = None,
             *args, **kwargs) -> None:
         super().__init__(name=name, *args, **kwargs)
@@ -18,13 +19,15 @@ class ResidualBlock(layers.Layer):
         self._filters = filters
         self._stride1 = stride1
         self._kernel_size = kernel_size
+        self._kernel_regularizer = kernel_regularizer
 
         self._conv_1 = keras.Sequential([
             layers.Conv2D(
                 filters,
                 kernel_size,
                 strides=stride1,
-                padding='SAME'),
+                padding='SAME',
+                kernel_regularizer=kernel_regularizer),
             layers.LayerNormalization(axis=-1),
             layers.Activation('relu'),
         ], name=f'{name}_conv1')
@@ -33,7 +36,8 @@ class ResidualBlock(layers.Layer):
                 filters,
                 kernel_size,
                 strides=1,
-                padding='SAME'),
+                padding='SAME',
+                kernel_regularizer=kernel_regularizer),
             layers.LayerNormalization(axis=-1),
         ], name=f'{name}_conv2')
 
@@ -48,7 +52,8 @@ class ResidualBlock(layers.Layer):
                 layers.Conv2D(
                     self._filters,
                     1,
-                    strides=self._stride1),
+                    strides=self._stride1,
+                    kernel_regularizer=self._kernel_regularizer),
                 layers.LayerNormalization(axis=-1),
             ], name=f'{self.name}_conv_shortcut')
         else:
@@ -70,6 +75,7 @@ class ResidualBlock(layers.Layer):
             filters=self._filters,
             kernel_size=self._kernel_size,
             stride1=self._stride1,
+            kernel_regularizer=self._kernel_regularizer,
             name=self.name,
         )
 
@@ -79,6 +85,7 @@ class BottleneckResidualBlock(layers.Layer):
             filters: int,
             kernel_size: int = 3,
             stride1: int = 1,
+            kernel_regularizer: keras.regularizers.Regularizer | None = None,
             name: str | None = None,
             *args, **kwargs) -> None:
         super().__init__(name=name, *args, **kwargs)
@@ -87,6 +94,7 @@ class BottleneckResidualBlock(layers.Layer):
         self._filters = filters
         self._stride1 = stride1
         self._kernel_size = kernel_size
+        self._kernel_regularizer = kernel_regularizer
 
         self._conv_1 = keras.Sequential([
             layers.Conv2D(
@@ -94,6 +102,7 @@ class BottleneckResidualBlock(layers.Layer):
                 1,
                 strides=stride1,
                 padding='SAME',
+                kernel_regularizer=kernel_regularizer,
                 name=f'{name}/conv1/conv'),
             layers.LayerNormalization(
                 axis=-1,
@@ -107,6 +116,7 @@ class BottleneckResidualBlock(layers.Layer):
                 kernel_size,
                 strides=1,
                 padding='SAME',
+                kernel_regularizer=kernel_regularizer,
                 name=f'{name}/conv2/conv'),
             layers.LayerNormalization(
                 axis=-1,
@@ -118,6 +128,7 @@ class BottleneckResidualBlock(layers.Layer):
                 filters,
                 1,
                 padding='SAME',
+                kernel_regularizer=kernel_regularizer,
                 name=f'{name}/conv3/conv'),
             layers.LayerNormalization(
                 axis=-1,
@@ -138,6 +149,7 @@ class BottleneckResidualBlock(layers.Layer):
                     self._filters,
                     1,
                     strides=self._stride1,
+                    kernel_regularizer=self._kernel_regularizer,
                     name=f'{name}/conv_shortcut/conv'),
                 layers.LayerNormalization(
                     axis=-1,
@@ -163,5 +175,6 @@ class BottleneckResidualBlock(layers.Layer):
             filters=self._filters,
             kernel_size=self._kernel_size,
             stride1=self._stride1,
+            kernel_regularizer=self._kernel_regularizer,
             name=self.name,
         )

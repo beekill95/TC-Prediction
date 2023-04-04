@@ -18,25 +18,24 @@
 # %load_ext autoreload
 # %autoreload 2
 
+from collections import Counter
 import pickle
+from sklearn.decomposition import IncrementalPCA
+from sklearn.preprocessing import StandardScaler
 from tc_formation.binary_classifications.data.patches_with_genesis_tfrecords_data_loader import PatchesWithGenesisTFRecordDataLoader
 from tc_formation.binary_classifications.data.random_positive_patches_data_loader import RandomPositivePatchesDataLoader
+from tc_formation.regularizers.decov import DeCovRegularizer
 from tc_formation.layers.sklearn_pca import SklearnPCALayer
-from tc_formation.layers.residual_block import ResidualBlock
 import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
 import tensorflow_addons as tfa
-from tqdm.auto import tqdm
 import numpy as np
-from sklearn.manifold import TSNE
 # -
 
 
 # In this version,
 # I'll use the new developed storms removal datasets (v2).
-#
-# And, I will use Resnet-like model.
 
 # +
 dataloader = PatchesWithGenesisTFRecordDataLoader()
@@ -84,7 +83,7 @@ train_patches_ds = tf.data.Dataset.sample_from_datasets(
 train_patches_ds = train_patches_ds.batch(256)
 # -
 
-# ## Resnet-like Model
+# ## Model
 #
 # Load preprocessing pipeline.
 
@@ -99,9 +98,10 @@ scaler = load_pickle('scalerdeveloped_storms_removed_v2.pkl')
 
 preprocessing = keras.Sequential([
     layers.Normalization(mean=scaler.mean_, variance=scaler.var_),
-    # SklearnPCALayer(pca.components_, pca.explained_variance_),
     layers.GaussianNoise(1.),
+    # SklearnPCALayer(pca.components_),
 ], name='preprocessing')
+# -
 
 # Now, we can define the model, similar to what we did in binary_classifications.
 
@@ -135,26 +135,34 @@ model = keras.Sequential([
     layers.Input(input_shape),
     preprocessing,
     layers.Conv2D(
-        128, 7, strides=2, activation='relu', padding='SAME'),
+        # was 64, and achieved 0.31 recall on test data. )but with only 2 conv2d)
+        # with 128, achieved .48 recall on test data. )but with only 2 conv2d)
+        128, 3,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(128, name='block_1a'),
+    layers.MaxPool2D(2, 2),
+    layers.Conv2D(
+        256, 3,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(128, name='block_1b'),
-    layers.LayerNormalization(axis=-1),
-    ResidualBlock(256, stride1=2, name='block_2a'),
-    layers.LayerNormalization(axis=-1),
-    ResidualBlock(256, name='block_2b'),
-    layers.LayerNormalization(axis=-1),
-    ResidualBlock(512, stride1=2, name='block_3a'),
-    layers.LayerNormalization(axis=-1),
-    ResidualBlock(512, name='block_3b'),
-    layers.LayerNormalization(axis=-1),
+    layers.MaxPool2D(2, 2),
+    layers.Conv2D(
+        512, 3,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3)),
+    # layers.LayerNormalization(axis=-1),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
     layers.Dropout(0.5),
     layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Dropout(0.5),
-    layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
+    layers.Dense(
+        1024,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3),
+        activity_regularizer=DeCovRegularizer(1e-3)),
     layers.Dropout(0.5),
     layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Activation('sigmoid'),
@@ -191,7 +199,7 @@ model.fit(
 metrics = model.evaluate(test_patches_ds)
 metrics
 
-model.save(f'saved_models/binary_classification_all_patches/04_exp11_{metrics[-1]:.3f}')
+model.save(f'saved_models/binary_classification_all_patches/04_exp13_f1_{metrics[-1]:.3f}')
 
 # ## Feature Maps Visualization
 

@@ -23,6 +23,7 @@ from tc_formation.binary_classifications.data.patches_with_genesis_tfrecords_dat
 from tc_formation.binary_classifications.data.patches_tfrecords_data_loader import PatchesTFRecordDataLoader
 import tensorflow as tf
 from tqdm.auto import tqdm
+import numpy as np
 
 
 # -
@@ -149,5 +150,4 @@ def perform_tsne(df):
     df['f2'] = embedding_2[:, 1]
     # df[['f1', 'f2']] = embedding_2[:, 0], embedding_2[:, 1]
     return df
-
 

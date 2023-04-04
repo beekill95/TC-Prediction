@@ -23,6 +23,7 @@ from tc_formation.binary_classifications.data.patches_with_genesis_tfrecords_dat
 from tc_formation.binary_classifications.data.random_positive_patches_data_loader import RandomPositivePatchesDataLoader
 from tc_formation.layers.sklearn_pca import SklearnPCALayer
 from tc_formation.layers.residual_block import BottleneckResidualBlock
+from tc_formation.regularizers.decov import DeCovRegularizer
 import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
@@ -141,20 +142,30 @@ model = keras.Sequential([
     layers.LayerNormalization(axis=-1),
     BottleneckResidualBlock(128, name='block_1b'),
     layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(128, name='block_1c'),
+    layers.LayerNormalization(axis=-1),
     BottleneckResidualBlock(256, stride1=2, name='block_2a'),
     layers.LayerNormalization(axis=-1),
     BottleneckResidualBlock(256, name='block_2b'),
     layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(256, name='block_2c'),
+    layers.LayerNormalization(axis=-1),
     BottleneckResidualBlock(512, stride1=2, name='block_3a'),
     layers.LayerNormalization(axis=-1),
     BottleneckResidualBlock(512, name='block_3b'),
+    layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(512, name='block_3c'),
     layers.LayerNormalization(axis=-1),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
     layers.Dropout(0.5),
     layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Dropout(0.5),
-    layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
+    layers.Dense(
+        1024,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3),
+        activity_regularizer=DeCovRegularizer(1e-3)),
     layers.Dropout(0.5),
     layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Activation('sigmoid'),
@@ -191,7 +202,7 @@ model.fit(
 metrics = model.evaluate(test_patches_ds)
 metrics
 
-model.save(f'saved_models/binary_classification_all_patches/04_exp11_{metrics[-1]:.3f}')
+model.save(f'saved_models/binary_classification_all_patches/04_exp12_{metrics[-1]:.3f}')
 
 # ## Feature Maps Visualization
 

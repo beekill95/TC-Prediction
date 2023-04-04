@@ -18,11 +18,14 @@
 # %load_ext autoreload
 # %autoreload 2
 
+from datetime import datetime
 import pickle
 from tc_formation.binary_classifications.data.patches_with_genesis_tfrecords_data_loader import PatchesWithGenesisTFRecordDataLoader
 from tc_formation.binary_classifications.data.random_positive_patches_data_loader import RandomPositivePatchesDataLoader
 from tc_formation.layers.sklearn_pca import SklearnPCALayer
-from tc_formation.layers.residual_block import ResidualBlock
+from tc_formation.layers.residual_block import BottleneckResidualBlock
+from tc_formation.regularizers.activation_decov import ActivationDeCovRegularizer
+from tc_formation.regularizers.weights_decor import WeightsCorrRegularizer
 import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
@@ -37,6 +40,8 @@ from sklearn.manifold import TSNE
 # I'll use the new developed storms removal datasets (v2).
 #
 # And, I will use Resnet-like model.
+
+date_str = datetime.now().strftime('%Y%m%d_%H_%M')
 
 # +
 dataloader = PatchesWithGenesisTFRecordDataLoader()
@@ -100,8 +105,11 @@ scaler = load_pickle('scalerdeveloped_storms_removed_v2.pkl')
 preprocessing = keras.Sequential([
     layers.Normalization(mean=scaler.mean_, variance=scaler.var_),
     # SklearnPCALayer(pca.components_, pca.explained_variance_),
-    layers.GaussianNoise(1.),
+    # layers.GaussianNoise(1.),
 ], name='preprocessing')
+
+
+# -
 
 # Now, we can define the model, similar to what we did in binary_classifications.
 
@@ -135,26 +143,45 @@ model = keras.Sequential([
     layers.Input(input_shape),
     preprocessing,
     layers.Conv2D(
-        128, 7, strides=2, activation='relu', padding='SAME'),
+        256, 7,
+        strides=2,
+        activation='relu',
+        padding='SAME',
+        kernel_regularizer=WeightsCorrRegularizer(1e-3),
+    ),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(128, name='block_1a'),
+    BottleneckResidualBlock(256, name='block_1a', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(128, name='block_1b'),
+    BottleneckResidualBlock(256, name='block_1b', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(256, stride1=2, name='block_2a'),
+    BottleneckResidualBlock(256, name='block_1c', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(256, name='block_2b'),
+    BottleneckResidualBlock(512, stride1=2, name='block_2a', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(512, stride1=2, name='block_3a'),
+    BottleneckResidualBlock(512, name='block_2b', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
-    ResidualBlock(512, name='block_3b'),
+    BottleneckResidualBlock(512, name='block_2c', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
+    layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(1024, stride1=2, name='block_3a', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
+    layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(1024, name='block_3b', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
+    layers.LayerNormalization(axis=-1),
+    BottleneckResidualBlock(1024, name='block_3c', kernel_regularizer=WeightsCorrRegularizer(1e-3)),
     layers.LayerNormalization(axis=-1),
     layers.GlobalAveragePooling2D(),
     layers.Flatten(),
     layers.Dropout(0.5),
-    layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
+    layers.Dense(
+        1024,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Dropout(0.5),
-    layers.Dense(1024, activation='relu', kernel_regularizer=keras.regularizers.L2(1e-3)),
+    layers.Dense(
+        1024,
+        activation='relu',
+        kernel_regularizer=keras.regularizers.L2(1e-3),
+        activity_regularizer=ActivationDeCovRegularizer(1e-3, use_corr=True),
+    ),
     layers.Dropout(0.5),
     layers.Dense(1, kernel_regularizer=keras.regularizers.L2(1e-3)),
     layers.Activation('sigmoid'),
@@ -184,6 +211,13 @@ model.fit(
             verbose=1,
             patience=50,
             restore_best_weights=True),
+        keras.callbacks.ModelCheckpoint(
+            f'saved_models/binary_classification_all_patches/04_exp17_{date_str}_last_weights/weights',
+            monitor='loss',
+            mode='min',
+            save_best_only=True,
+            save_weights_only=True,
+        ),
     ]
 )
 # -
@@ -191,9 +225,9 @@ model.fit(
 metrics = model.evaluate(test_patches_ds)
 metrics
 
-model.save(f'saved_models/binary_classification_all_patches/04_exp11_{metrics[-1]:.3f}')
+model.save(f'saved_models/binary_classification_all_patches/04_exp17_{date_str}_{metrics[-1]:.3f}')
 
-# ## Feature Maps Visualization
+# ## Feature Maps Visualization for Best Weights
 
 # +
 from sklearn.manifold import TSNE # noqa
@@ -286,3 +320,36 @@ plt.title('Genesis cases in training data')
 sns.scatterplot(
     df[(df['type'] == 'train') & (df['y'] == 0)], x='f1', y='f2', hue='y', style='y')
 plt.title('Non-genesis cases in training data')
+
+# # Feature Maps for Last Weights
+
+# +
+model.load_weights(f'saved_models/binary_classification_all_patches/04_exp17_{date_str}_last_weights/weights')
+feature_map = keras.Model(
+    inputs=model.inputs,
+    outputs=model.get_layer(name='flatten').output,
+)
+
+metrics = model.evaluate(test_patches_ds)
+metrics
+# -
+
+# Now, we will apply the encoder to the validation set
+# and visualize the embedding vectors with tSNE.
+val_embedding_df = obtain_embedding(val_patches_ds)
+df = perform_tsne(val_embedding_df)
+fig, axes = plt.subplots(ncols=2, figsize=(12, 6))
+sns.scatterplot(df, x='f1', y='f2', hue='y', style='y', ax=axes[0])
+sns.scatterplot(df, x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[1])
+
+embedding_df = pd.concat([train_embedding_df, val_embedding_df])
+df = perform_tsne(embedding_df)
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 12), sharex=True, sharey=True)
+sns.scatterplot(
+    df[df['type'] == 'train'], x='f1', y='f2', hue='y', style='y', ax=axes[0, 0])
+sns.scatterplot(
+    df[df['type'] == 'train'], x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[0, 1])
+sns.scatterplot(
+    df[df['type'] == 'val'], x='f1', y='f2', hue='y', style='y', ax=axes[1, 0])
+sns.scatterplot(
+    df[df['type'] == 'val'], x='f1', y='f2', hue='y_pred', style='y_pred', ax=axes[1, 1])

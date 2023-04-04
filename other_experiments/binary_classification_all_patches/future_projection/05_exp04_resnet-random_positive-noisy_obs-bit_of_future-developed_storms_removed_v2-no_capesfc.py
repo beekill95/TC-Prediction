@@ -14,7 +14,7 @@
 # ---
 
 # +
-# %cd ../..
+# %cd ../../..
 # %load_ext autoreload
 # %autoreload 2
 
@@ -27,28 +27,27 @@ import tensorflow as tf
 import tensorflow.keras as keras
 import tensorflow.keras.layers as layers
 import tensorflow_addons as tfa
-from tqdm.auto import tqdm
 import numpy as np
-from sklearn.manifold import TSNE
 # -
 
 
 # In this version,
 # I'll use the new developed storms removal datasets (v2).
-#
-# And, I will use Resnet-like model.
 
 # +
 dataloader = PatchesWithGenesisTFRecordDataLoader()
-train_negative_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_variables_developed_storms_removed_v2_Train.tfrecords'
-val_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_variables_developed_storms_removed_v2_Val.tfrecords'
-test_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_variables_developed_storms_removed_v2_Test.tfrecords'
+train_fixed_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_varibles_no_capesfc_developed_storms_removed_v2_Train.tfrecords'
+val_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_varibles_no_capesfc_developed_storms_removed_v2_Val.tfrecords'
+test_path = 'data/ncep_WP_EP_0h_all_binary_patches_all_varibles_no_capesfc_developed_storms_removed_v2_Test.tfrecords'
 
-train_fixed_patches_ds = dataloader.load_dataset(train_negative_path, batch_size=-1)
+train_rcp45_fixed_path = 'data/WPAC_RCP45_all_patches_all_variables_till_20350101_leadtime_0h.tfrecords'
+
+train_fixed_patches_ds = dataloader.load_dataset(train_fixed_path, batch_size=-1)
+train_RCP45_fixed_patches_ds = dataloader.load_dataset(train_rcp45_fixed_path, batch_size=-1)
 val_patches_ds = dataloader.load_dataset(val_path, batch_size=256)
 test_patches_ds = dataloader.load_dataset(test_path, batch_size=256)
 
-input_shape = (31, 31, 136)
+input_shape = (31, 31, 135)
 def set_shape(shape, batch=True):
     def _set_shape(X, y):
         if batch:
@@ -64,27 +63,34 @@ def set_shape(shape, batch=True):
 
 
 train_fixed_patches_ds = train_fixed_patches_ds.map(set_shape(input_shape, False))
+train_RCP45_fixed_patches_ds = train_RCP45_fixed_patches_ds.map(set_shape(input_shape, False))
 val_patches_ds = val_patches_ds.map(set_shape(input_shape))
 test_patches_ds = test_patches_ds.map(set_shape(input_shape))
 
 # +
 # Load positive patch dataset.
-train_random_positive_path = 'data/ncep_WP_EP_0h_full_domain_developed_storms_removed_v2_Train.tfrecords'
+train_random_positive_path = 'data/ncep_WP_EP_0h_full_domain_developed_storms_removed_v2_no_capesfc_Train.tfrecords'
+train_random_positive_RCP45_path = 'data/WPAC_RCP45_full_domain_all_variables_till_20350101_leadtime_0h.tfrecords'
 random_positive_patch_dataloader = RandomPositivePatchesDataLoader(
-    datashape=(41, 161, 136),
+    datashape=(41, 161, 135),
     domain_size=31)
 train_random_positive_patches_ds = random_positive_patch_dataloader.load_dataset(train_random_positive_path)
+train_random_positive_RCP45_patches_ds = random_positive_patch_dataloader.load_dataset(train_random_positive_RCP45_path)
 
 # Merge positive and negative datasets to form our train dataset.
 train_patches_ds = tf.data.Dataset.sample_from_datasets(
-    [train_random_positive_patches_ds.repeat(1),
-     train_fixed_patches_ds],
-    weights=[0.5, 0.5],
+    [train_random_positive_patches_ds,
+     train_fixed_patches_ds,
+     train_RCP45_fixed_patches_ds,
+     train_random_positive_RCP45_patches_ds,
+    ],
     stop_on_empty_dataset=False)
 train_patches_ds = train_patches_ds.batch(256)
+
+
 # -
 
-# ## Resnet-like Model
+# ## Model
 #
 # Load preprocessing pipeline.
 
@@ -94,14 +100,15 @@ def load_pickle(path: str):
         obj = pickle.load(inpath)
         return obj
 
-scaler = load_pickle('scalerdeveloped_storms_removed_v2.pkl')
-# pca = load_pickle('pcadeveloped_storms_removed_v2.pkl')
+scaler = load_pickle('scaler_developed_storms_removed_v2_no_capesfc.pkl')
+# pca = load_pickle('pca_developed_storms_removed_v2_no_capesfc.pkl')
 
 preprocessing = keras.Sequential([
     layers.Normalization(mean=scaler.mean_, variance=scaler.var_),
-    # SklearnPCALayer(pca.components_, pca.explained_variance_),
     layers.GaussianNoise(1.),
+    # SklearnPCALayer(pca.components_),
 ], name='preprocessing')
+# -
 
 # Now, we can define the model, similar to what we did in binary_classifications.
 
@@ -191,7 +198,7 @@ model.fit(
 metrics = model.evaluate(test_patches_ds)
 metrics
 
-model.save(f'saved_models/binary_classification_all_patches/04_exp11_{metrics[-1]:.3f}')
+model.save(f'saved_models/binary_classification_all_patches/future_projection/05_exp04_f1_{metrics[-1]:.3f}')
 
 # ## Feature Maps Visualization
 
