@@ -198,7 +198,8 @@ def extract_domain(args: ExtractDomainArgs):
     filename = f'fnl_{datepart}.nc'
     domain_ds.to_netcdf(
         os.path.join(args.outputdir, filename),
-        mode='w', format='NETCDF4')
+        mode='w',
+        format='NETCDF3_64BIT')
 
 
 def main(args=None):
