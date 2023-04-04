@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.0
+#       jupytext_version: 1.14.5
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -114,8 +114,8 @@ rcp45_train_ds, rcp45_val_ds, _ = dataloader_theanh.load_dataset(
 
 rcp45_train_ds = rcp45_train_ds.map(set_shape(input_shape))
 rcp45_val_ds = rcp45_val_ds.map(set_shape(input_shape))
+# -
 
-# + tags=[]
 model.fit(
     rcp45_train_ds,
     epochs=1000,
@@ -130,7 +130,6 @@ model.fit(
             restore_best_weights=True),
     ]
 )
-# -
 
 # Also, I want to know if it still works with the original data that it was trained on.
 

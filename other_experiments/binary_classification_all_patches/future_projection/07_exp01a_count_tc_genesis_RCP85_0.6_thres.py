@@ -26,6 +26,12 @@ import pandas as pd
 from shapely.geometry import Polygon
 # -
 
+# Set font size for all matplotlib figures.
+plt.rc('xtick', labelsize='xx-large') #fontsize of the x tick labels
+plt.rc('ytick', labelsize='xx-large') #fontsize of the y tick labels
+plt.rc('axes', labelsize='xx-large')
+plt.rc('legend', fontsize='xx-large')
+
 # In this experiment, I will count the number of TC genesis from
 # the patches prediction result.
 

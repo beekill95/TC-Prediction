@@ -35,6 +35,13 @@ from tc_formation.tcg_analysis.clustering import DBScanClustering
 numpyro.set_host_device_count(4)
 # -
 
+# Set font size for all matplotlib figures.
+plt.rc('xtick', labelsize=20) #fontsize of the x tick labels
+plt.rc('ytick', labelsize=20) #fontsize of the y tick labels
+plt.rc('axes', labelsize=20)
+plt.rc('legend', fontsize=20)
+
+
 # # TC Trend on RCP45 and RCP85
 #
 # In this experiment,
@@ -72,26 +79,30 @@ rcp85_count_df.head()
 # Now, we can display the genesis trend.
 
 # +
-def display_genesis_trend(count_df: pd.DataFrame):
-    _, ax = plt.subplots(figsize=(18, 6), layout='constrained')
-
+def display_genesis_trend(count_df: pd.DataFrame, ax: plt.Axes):
     mid_century_df = count_df[count_df['year'] <= 2050]
     end_century_df = count_df[count_df['year'] > 2050]
 
     nb_years = len(mid_century_df)
-    ax.plot(range(nb_years), mid_century_df['genesis'], label='2030-2050')
-    ax.plot(range(nb_years), end_century_df['genesis'], label='2080-2100')
+    ax.plot(range(nb_years), mid_century_df['genesis'], label='2030-2050', lw=4.)
+    ax.plot(range(nb_years), end_century_df['genesis'], label='2080-2100', c='black', lw=4.)
     ax.legend()
     ax.set_xticks(range(nb_years))
     ax.set_xticklabels(f'{2030 + i}\n{2080 + i}' for i in range(nb_years))
     ax.set_xlabel('Year')
     ax.set_ylabel('Genesis Frequency')
+    for axis in ['top', 'bottom', 'left', 'right']:
+        ax.spines[axis].set_linewidth(2.5)
 
 
-display_genesis_trend(rcp45_count_df)
+_, axes = plt.subplots(figsize=(18, 12), layout='constrained', nrows=2, sharey=True)
+ax = axes[0]
+display_genesis_trend(rcp45_count_df, ax=ax)
+ax.set_title('a)', loc='left', fontsize='xx-large')
+ax = axes[1]
+display_genesis_trend(rcp85_count_df, ax=ax)
+ax.set_title('b)', loc='left', fontsize='xx-large')
 # -
-
-display_genesis_trend(rcp85_count_df)
 
 # ## Trend Analysis
 

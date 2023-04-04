@@ -26,6 +26,12 @@ import pandas as pd
 from shapely.geometry import Polygon
 # -
 
+# Set font size for all matplotlib figures.
+plt.rc('xtick', labelsize=20) #fontsize of the x tick labels
+plt.rc('ytick', labelsize=20) #fontsize of the y tick labels
+plt.rc('axes', labelsize=20)
+plt.rc('legend', fontsize=20)
+
 # In this experiment, I will count the number of TC genesis from
 # the patches prediction result.
 
@@ -141,12 +147,16 @@ def plot_tcg_consecutive_days(genesis_pred_df: pd.DataFrame, year: int):
     fig, ax = plt.subplots(figsize=(18, 6))
     for i, (loc, rows) in enumerate(genesis_pred_df):
         genesis_rows = rows[rows['genesis']]
-        ax.scatter(genesis_rows['day_nb'], [i] * len(genesis_rows))
+        ax.scatter(genesis_rows['day_nb'], [i] * len(genesis_rows), s=60)
         y_labels.append(f'Patch #{i} - ({loc[0]:.0f}, {loc[1]:.0f})')
 
-    ax.set_yticks(range(len(y_labels)))
-    ax.set_yticklabels(y_labels)
-    ax.set_title(f'Genesis in {year=}')
+    for axis in ['top', 'bottom', 'left', 'right']:
+        ax.spines[axis].set_linewidth(2.5)
+
+    ax.set_yticks(range(len(y_labels))[::2])
+    ax.set_yticklabels(y_labels[::2])
+    # ax.set_title(f'Genesis in {year=}')
+    ax.set_xlabel('Days since May 1st')
     fig.tight_layout()
 
 
@@ -337,11 +347,14 @@ df = genesis_count_df[genesis_count_df['year'] <= 2050]
 nb_years = len(df)
 ax.plot(range(nb_years), df['genesis'], label='2030-2050')
 df = genesis_count_df[genesis_count_df['year'] > 2050]
-ax.plot(range(nb_years), df['genesis'], label='2080-2100')
+ax.plot(range(nb_years), df['genesis'], label='2080-2100', c='black')
 ax.set_xticks(range(nb_years))
 ax.set_xticklabels([f'{2030 + i}\n{2080 + i}' for i in range(nb_years)])
+for axis in ['top', 'bottom', 'left', 'right']:
+    ax.spines[axis].set_linewidth(2.5)
 ax.set_ylabel('Genesis Count')
 ax.set_xlabel('Year')
+ax.set_ylim(7, 30)
 ax.legend()
 fig.tight_layout()
 
