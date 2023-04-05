@@ -2,13 +2,23 @@
 
 ## Dependencies
 
-This project uses conda to manage dependencies.
+This project uses a combination of conda and poetry to manage dependencies.
 You can use the following command to install the required dependencies:
 
 > conda create -n tc -f environment.yml
 
-After the installation finishes,
-you can activate the environment `tc` to run the experiments in this project.
+Once the installation finishes,
+you will need to install poetry.
+In order to do that, please refer to [Poetry homepage](https://python-poetry.org/docs/#installation)
+for the latest installation method.
+Right now, it is:
+
+> curl -sSL https://install.python-poetry.org | python3 -
+
+Finally, to install the remaining dependencies:
+
+> conda activate tc
+> poetry install
 
 ## Jupyter Notebooks
 
