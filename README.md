@@ -18,6 +18,7 @@ Right now, it is:
 Finally, to install the remaining dependencies:
 
 > conda activate tc
+
 > poetry install
 
 ## Jupyter Notebooks
