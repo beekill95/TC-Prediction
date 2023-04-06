@@ -43,3 +43,60 @@ dataset utilities to load preprocessed datasets,
 integrated gradients, etc.
 * `experiments/` folder contains the experiments relating to Resnet, Unet, integrated gradients and feature selection.
 * `other_experiments/` folder contains my other (crazy) ideas relating to the project.
+
+## Datasets
+
+In order to work with the experiments,
+you'll need the [NCEP FNL dataset](https://rda.ucar.edu/datasets/ds083.2/),
+which is reanalysis weather data.
+To download the data,
+first register an account at [Research Data Archive](https://rda.ucar.edu/).
+
+After that, you can execute the script `scripts/download_ncep_fnl.sh`
+to download the dataset.
+Upon execution, the script will ask for your username and password which you've created at RDA website.
+Once the credential is provided,
+the script will download data from May to November in every year from 2008 onwards.
+Grab ☕ because this is  gonna be long!
+
+The NCEP/FNL dataset is in .grib2 format,
+which is not very friendly to work with.
+In addition, the dataset contains global data and redundant environment variables
+which are not what want.
+So we'll execute the script `scripts/extract_environment_features_from_ncep.py`
+to extract the domain and variables of interest and convert to netcdf files.
+
+> scripts/extract_environment_features_from_ncep --lat 5 45 --long 100 260 <path_to_ncep_fnl> <output_directory>
+
+This is also a long-running script so make yourself entertained while the script is running.
+Moreover, if you have a machine with many cpus, you can speed up the script by providing
+`-p <number_of_parallel_processes>` to the script.
+The default value is 8 parallel processes.
+
+While the script is doing its job,
+you will need a best track data,
+which is basically the historical track data of tropical storms.
+The data we will be using is IBTrACS, which can be downloaded from [here](https://www.ncei.noaa.gov/products/international-best-track-archive).
+You'll be presented with many versions of the best track,
+plese use the csv file.
+
+Once the extract script done running,
+and the best track data is downloaded,
+you can use the following script to create labels for training deep learning models.
+
+> scripts/create_labels_v2
+> --best-track <path_to_csv_ibtracs>
+> --observations-dir <path_to_extracted_netcdf_output_dir>
+> --leadtime <leadtime>
+
+The script will create a `tc_<leadtime>.csv` file in the `<path_to_extracted_netcdf_output_dir>`
+containing the labels.
+
+Finally,
+use the following script to split the label file into training, validation, and testing.
+
+> scripts/split_train_test_v1
+> --test-from <YYYYMMDD: from which the test data starts>
+> --val-from <YYYYMMDD: from which the validation data starts>
+> --labels <path_to_the_created_label_file>
+
