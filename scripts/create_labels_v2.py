@@ -48,6 +48,12 @@ def parse_arguments(args=None):
         type=int,
         help='The lead time to generate the data. Default is 0h.')
 
+    parser.add_argument(
+        '--keep-pre-existing-storms',
+        dest='keep_pre_existing_storms',
+        action='store_true',
+        help='Whether the labels contains prexisting storms')
+
     return parser.parse_args(args)
 
 
@@ -195,9 +201,14 @@ def main(args=None):
     assert len(files_genesis_df) >= len(files_df), 'Just to make sure we dont remove rows from files_df'
 
     labels_df = create_labels(files_genesis_df, best_track_df)
+    if not args.keep_pre_existing_storms:
+        has_preexisting_storms = labels_df['Is Other TC Happening']
+        has_genesis = labels_df['Genesis']
+        labels_df = labels_df[has_genesis | ~has_preexisting_storms]
+
     output_path = os.path.join(
         args.observations_dir, f'tc_{args.leadtime}h.csv')
-    labels_df.to_csv(output_path)
+    labels_df.to_csv(output_path, index=False)
 
 if __name__ == '__main__':
     main()
