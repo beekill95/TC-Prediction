@@ -330,6 +330,18 @@ files = [
 ]
 
 [[package]]
+name = "basemap-data-hires"
+version = "1.3.2"
+description = "High-resolution data assets for matplotlib basemap"
+category = "main"
+optional = false
+python-versions = ">=2.6, !=3.0.*, !=3.1.*, <4"
+files = [
+    {file = "basemap_data_hires-1.3.2-py2.py3-none-any.whl", hash = "sha256:39c14c865f8b89c4254d68165a36f1d34dece9366b6cd344692ec02001df956e"},
+    {file = "basemap_data_hires-1.3.2.zip", hash = "sha256:0982eb95b2066ccbe10b6580bcd9c597e3a4e25016bf25afb65e1a96f6e3e97d"},
+]
+
+[[package]]
 name = "beautifulsoup4"
 version = "4.12.0"
 description = "Screen-scraping library"
@@ -4550,4 +4562,4 @@ test = ["mypy", "pre-commit", "pytest", "pytest-asyncio", "websockets (>=10.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "9e173bb73a94f473672542dafa0f52bf5c35f2b5ed8f3c2ba015ea859b204bc4"
+content-hash = "bfef050d7a7e30b117b642f2c7a104d4c33235de04dbc3d34b2de81e995b6ea5"
