@@ -70,15 +70,15 @@ def filter_negative_samples(dataset: pd.DataFrame, negative_samples_ratio=None, 
     if negative_samples_ratio is None and other_happening_tc_ratio is None:
         return dataset
 
-    positive_samples = dataset[dataset['TC'] == 1]
+    positive_samples = dataset[dataset['TC']]
     samples = [positive_samples]
     has_is_other_tc_happening_column = 'Is Other TC Happening' in dataset.columns
     print(f'Positive samples: {len(positive_samples)}')
 
     # Make sure that we works seamlessly with labels v2 and v3+.
-    negative_samples = (dataset[(dataset['TC'] == 0) & (dataset['Is Other TC Happening'] == 0)]
+    negative_samples = (dataset[~dataset['TC'] & ~dataset['Is Other TC Happening']]
                         if has_is_other_tc_happening_column
-                        else dataset[dataset['TC'] == 0])
+                        else dataset[~dataset['TC']])
     if negative_samples_ratio is not None:
         nb_negative_samples_to_take = int(
             len(positive_samples) * negative_samples_ratio)
@@ -91,7 +91,7 @@ def filter_negative_samples(dataset: pd.DataFrame, negative_samples_ratio=None, 
 
     if other_happening_tc_ratio is not None:
         assert has_is_other_tc_happening_column, 'Require labels v3+ to filter out other happening tc ratio.'
-        other_happening_tc_samples = dataset[(dataset['TC'] == 0) & (dataset['Is Other TC Happening'] == 1)]
+        other_happening_tc_samples = dataset[~dataset['TC'] & dataset['Is Other TC Happening']]
 
         nb_other_happening_tc_to_take = int(len(positive_samples) * other_happening_tc_ratio)
         other_happening_tc_samples = other_happening_tc_samples.sample(nb_other_happening_tc_to_take)
@@ -101,7 +101,7 @@ def filter_negative_samples(dataset: pd.DataFrame, negative_samples_ratio=None, 
     else:
         # Make sure that we add all other TCs happening rows back to the original if possible!
         if has_is_other_tc_happening_column:
-            samples.append(dataset[(dataset['TC'] == 0) & (dataset['Is Other TC Happening'] == 1)])
+            samples.append(dataset[~dataset['TC'] & dataset['Is Other TC Happening']])
 
     result = pd.concat(samples)
     print(f'Total samples: {len(result)}')
