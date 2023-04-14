@@ -143,7 +143,7 @@ def create_labels(file_genesis_df, best_track_df) -> pd.DataFrame:
 
         if is_genesis:
             label = {
-                'Date': row['Date'],
+                'Date': row['OriginalDate'],
                 'Genesis': is_genesis,
                 'TC': is_genesis,
                 'TC Id': row['SID'],
@@ -160,7 +160,7 @@ def create_labels(file_genesis_df, best_track_df) -> pd.DataFrame:
             }
         else:
             label = {
-                'Date': row['Date'],
+                'Date': row['OriginalDate'],
                 'Genesis': is_genesis,
                 'TC': is_genesis,
                 'Is Other TC Happening': len(other_tc_df) > 0,
