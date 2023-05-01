@@ -25,10 +25,12 @@ import jax.numpy as jnp
 import jax.random as random
 from datetime import datetime
 import matplotlib.pyplot as plt
+import numpy as np
 import numpyro
 from numpyro.infer import NUTS, MCMC
 import os
 import pandas as pd
+from scipy.stats import poisson as poisson_rv
 from tc_formation.tcg_analysis.clustering import DBScanClustering, WeightedFusedBoxesClustering
 
 
@@ -103,7 +105,7 @@ mcmc.run(
     rcp=jnp.array(count_df['rcp'].values),
     cluster=jnp.array(count_df['cluster'].cat.codes.values),
 )
-mcmc.print_summary()
+mcmc.print_summary(exclude_deterministic=False)
 # -
 
 idata = az.from_numpyro(
@@ -112,6 +114,64 @@ idata = az.from_numpyro(
     dims=dict(b2=['rcp'], b3=['cluster']))
 az.plot_trace(idata)
 plt.tight_layout()
+
+
+# ### Plot Data Fit
+
+# +
+def plot_data_fit(idata, ax: plt.Axes, *, rcp: str, cluster: str, nb_lines: int = 20):
+    posterior = idata['posterior']
+    b0 = posterior['b0'].values.flatten()
+    b1 = posterior['b1'].values.flatten()
+    b2 = posterior['b2'].sel(rcp=rcp).values.flatten()
+    b3 = posterior['b3'].sel(cluster=cluster).values.flatten()
+
+    # Choose random lines.
+    random_indices = np.random.choice(len(b0), size=nb_lines)
+    year_range = np.linspace(2030, 2100, 100)
+    years_with_dist = [2040, 2050, 2080, 2090, 2100]
+
+    for idx in random_indices:
+        mean = np.exp(b0[idx] + b1[idx] * year_range + b2[idx] + b3[idx])
+        # Plot the mean lines.
+        ax.plot(year_range, mean, color='blue', alpha=0.5)
+
+        # Super-impose Poisson distributions.
+        for yr in years_with_dist:
+            rv = poisson_rv(np.exp(b0[idx] + b1[idx] * yr + b2[idx]))
+            cnt = np.arange(rv.ppf(0.01), rv.ppf(0.99))
+            pmf = rv.pmf(cnt)
+            # Scale pmf.
+            pmf = pmf * 9 / pmf.max()
+            ax.plot(-pmf + yr, cnt, color='purple', alpha=0.5)
+
+    for yr in years_with_dist:
+        ax.vlines(yr, *ax.get_ylim(), linestyles='dashed', alpha=0.5)
+
+
+fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+rcp45_dbscan_mask = (count_df['cluster'] == 'dbscan') & (count_df['rcp'] == 0)
+ax.scatter(count_df[rcp45_dbscan_mask]['year'], count_df[rcp45_dbscan_mask]['genesis'], color='black')
+plot_data_fit(idata, ax=ax, rcp='RCP45', cluster='dbscan')
+# -
+
+data_to_plot = [
+    dict(cluster='dbscan', rcp='RCP45'),
+    dict(cluster='dbscan', rcp='RCP85'),
+    dict(cluster='wbf', rcp='RCP45'),
+    dict(cluster='wbf', rcp='RCP85'),
+]
+fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(12, 8), layout='constrained')
+for ax, data, panel in zip(axes.flatten(), data_to_plot, ['a)', 'b)', 'c)', 'd)']):
+    cluster, rcp = data['cluster'], data['rcp']
+    mask = (count_df['cluster'] == cluster) & (count_df['rcp'] == (0 if rcp == 'RCP45' else 1))
+    ax.scatter(count_df[mask]['year'], count_df[mask]['genesis'], color='black')
+    plot_data_fit(idata, ax=ax, rcp=rcp, cluster=cluster)
+
+    #ax.set_title(f'{cluster=} - {rcp=}')
+    ax.set_xlabel('Year')
+    ax.set_ylabel('TCGs')
+    ax.set_title(panel, loc='left')
 
 # ### Year
 
